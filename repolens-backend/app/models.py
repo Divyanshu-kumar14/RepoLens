@@ -39,6 +39,7 @@ class IngestionStatus(BaseModel):
     repo_id: str
     status: str = Field(..., description="completed|processing|failed")
     progress: Optional[int] = Field(None, description="Progress percentage (0-100)")
+    stage: Optional[str] = Field(None, description="Human-readable stage description")
     error: Optional[str] = Field(None, description="Error message if failed")
     
     class Config:

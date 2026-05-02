@@ -7,12 +7,19 @@ from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from app.config import settings
 import logging
+import threading
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
 # Module-level singletons — avoids re-initializing heavy models on every call
 _embeddings_instance: HuggingFaceEmbeddings | None = None
 _llm_instance: WatsonxLLM | None = None
+
+# Vectorstore connection pool (Issue #5: Vectorstore Pooling)
+_vectorstore_cache: Dict[str, Chroma] = {}
+_cache_lock = threading.Lock()
+_MAX_CACHE_SIZE = 10  # Limit to 10 repositories in memory
 
 
 def get_embeddings() -> HuggingFaceEmbeddings:
@@ -79,7 +86,7 @@ def get_llm() -> WatsonxLLM:
 
 def get_vectorstore(repo_id: str, embeddings: HuggingFaceEmbeddings) -> Chroma:
     """
-    Load existing ChromaDB vectorstore for a repository.
+    Load or retrieve cached vectorstore for a repository (Issue #5: Connection Pooling).
 
     Args:
         repo_id: Repository identifier
@@ -88,17 +95,34 @@ def get_vectorstore(repo_id: str, embeddings: HuggingFaceEmbeddings) -> Chroma:
     Returns:
         Chroma vectorstore instance
     """
-    try:
-        persist_directory = f"{settings.chromadb_dir}/{repo_id}"
-        vectorstore = Chroma(
-            persist_directory=persist_directory,
-            embedding_function=embeddings,
-        )
-        logger.info(f"Loaded vectorstore for repo {repo_id}")
-        return vectorstore
-    except Exception as e:
-        logger.error(f"Failed to load vectorstore for {repo_id}: {e}")
-        raise
+    with _cache_lock:
+        # Check cache first
+        if repo_id in _vectorstore_cache:
+            logger.debug(f"Using cached vectorstore for {repo_id}")
+            return _vectorstore_cache[repo_id]
+        
+        # Load and cache
+        try:
+            persist_directory = f"{settings.chromadb_dir}/{repo_id}"
+            vectorstore = Chroma(
+                persist_directory=persist_directory,
+                embedding_function=embeddings,
+            )
+            
+            # Cache it (limit cache size)
+            if len(_vectorstore_cache) >= _MAX_CACHE_SIZE:
+                # Remove oldest entry (FIFO)
+                oldest_key = next(iter(_vectorstore_cache))
+                del _vectorstore_cache[oldest_key]
+                logger.debug(f"Cache full, removed {oldest_key}")
+            
+            _vectorstore_cache[repo_id] = vectorstore
+            logger.info(f"Loaded and cached vectorstore for repo {repo_id}")
+            return vectorstore
+            
+        except Exception as e:
+            logger.error(f"Failed to load vectorstore for {repo_id}: {e}")
+            raise
 
 
 def create_vectorstore(
@@ -107,7 +131,7 @@ def create_vectorstore(
     embeddings: HuggingFaceEmbeddings,
 ) -> Chroma:
     """
-    Create new ChromaDB vectorstore from documents.
+    Create new ChromaDB vectorstore from documents with optimized index (Issue #10).
 
     Args:
         repo_id: Repository identifier
@@ -119,13 +143,21 @@ def create_vectorstore(
     """
     try:
         persist_directory = f"{settings.chromadb_dir}/{repo_id}"
+        
+        # Create vectorstore with optimized HNSW index parameters
         vectorstore = Chroma.from_documents(
             documents=documents,
             embedding=embeddings,
             persist_directory=persist_directory,
+            collection_metadata={
+                "hnsw:space": "cosine",  # Cosine similarity for embeddings
+                "hnsw:construction_ef": 200,  # Higher = better recall, slower build
+                "hnsw:search_ef": 100,  # Higher = better recall, slower search
+                "hnsw:M": 16,  # Number of connections per layer
+            }
         )
         logger.info(
-            f"Created vectorstore for repo {repo_id} with {len(documents)} documents"
+            f"Created optimized vectorstore for repo {repo_id} with {len(documents)} documents"
         )
         return vectorstore
     except Exception as e:

@@ -107,11 +107,27 @@ export default function Hero3D() {
             transition={{ duration: 0.6, delay: 0.4 }}
             className="flex flex-wrap gap-4 justify-center items-center pt-4"
           >
-            <Button3D variant="primary" size="lg">
+            <Button3D
+              variant="primary"
+              size="lg"
+              onClick={() =>
+                document
+                  .getElementById("features")
+                  ?.scrollIntoView({ behavior: "smooth" })
+              }
+            >
               Get Started
             </Button3D>
-            <Button3D variant="outlined" size="lg">
-              View Demo
+            <Button3D
+              variant="outlined"
+              size="lg"
+              onClick={() =>
+                document
+                  .getElementById("how-it-works")
+                  ?.scrollIntoView({ behavior: "smooth" })
+              }
+            >
+              How It Works
             </Button3D>
           </motion.div>
 

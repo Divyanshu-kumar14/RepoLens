@@ -7,14 +7,34 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
+import dynamic from "next/dynamic";
 import Navigation3D from "@/components/ui/Navigation3D";
-import Hero3D from "@/components/Hero3D";
-import ChatInterface3D from "@/components/ChatInterface3D";
 import Card3D from "@/components/ui/Card3D";
 import Button3D from "@/components/ui/Button3D";
 import Input3D from "@/components/ui/Input3D";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import { ToastContainer } from "@/components/ui/Toast";
+
+// Issue #13: Code splitting for heavy 3D components
+const Hero3D = dynamic(() => import("@/components/Hero3D"), {
+  loading: () => <div className="h-screen" />,
+  ssr: false,
+});
+
+const ChatInterface3D = dynamic(() => import("@/components/ChatInterface3D"), {
+  loading: () => <LoadingSpinner />,
+  ssr: false,
+});
+
+const FileTree = dynamic(() => import("@/components/FileTree"), {
+  loading: () => null,
+  ssr: false,
+});
+
+const CodeHealthDashboard = dynamic(() => import("@/components/CodeHealthDashboard"), {
+  loading: () => null,
+  ssr: false,
+});
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/useToast";
 import { apiService } from "@/services/api";
@@ -32,6 +52,18 @@ export default function Home() {
   const [isQuerying, setIsQuerying] = useState(false);
   const [isIngesting, setIsIngesting] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
+  const [ingestionProgress, setIngestionProgress] = useState(0);
+  const [ingestionStage, setIngestionStage] = useState("");
+  const [highlightedFile, setHighlightedFile] = useState<string | undefined>();
+
+  const SUGGESTED_QUESTIONS = [
+    "What does this project do?",
+    "How does authentication work?",
+    "List all API endpoints",
+    "What are the main dependencies?",
+    "Explain the folder structure",
+    "Are there any potential security issues?",
+  ];
 
   const { isDarkMode, toggleTheme, mounted } = useTheme();
   const toast = useToast();
@@ -48,42 +80,10 @@ export default function Home() {
     };
   }, []);
 
-  // Handle repository ingestion
-  const handleIngestRepo = useCallback(async () => {
-    if (!repoUrl.trim()) {
-      toast.error("Please enter a repository URL");
-      return;
-    }
-
-    setIsIngesting(true);
-    try {
-      const response = await apiService.ingestRepository(repoUrl);
-
-      // Wait for the background ingestion task to complete
-      await apiService.pollIngestionStatus(response.repo_id);
-
-      setCurrentRepoId(response.repo_id);
-      setMessages([]);
-      toast.success("Repository ingested successfully!");
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.detail ||
-          err.message ||
-          "Failed to ingest repository",
-      );
-    } finally {
-      setIsIngesting(false);
-    }
-  }, [repoUrl, toast]);
-
-  // Handle sending a question
-  const handleSendMessage = useCallback(
-    async (question: string) => {
-      if (!currentRepoId) {
-        toast.error("Please ingest a repository first");
-        return;
-      }
-
+  // ── Helper: send a message for a specific repo_id using SSE streaming ──────
+  // Defined FIRST because handleIngestRepo depends on it (auto-summary).
+  const handleSendMessageForRepo = useCallback(
+    async (repoId: string, question: string) => {
       const userMessage: Message = {
         id: `user-${Date.now()}`,
         type: "user",
@@ -93,37 +93,136 @@ export default function Home() {
       setMessages((prev) => [...prev, userMessage]);
       setIsQuerying(true);
 
+      // Placeholder assistant message — updated in-place as tokens arrive
+      const assistantId = `assistant-${Date.now()}`;
+      const placeholderMessage: Message = {
+        id: assistantId,
+        type: "assistant",
+        content: "",
+        sources: [],
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, placeholderMessage]);
+
       try {
-        const response = await apiService.queryRepository(
-          currentRepoId,
-          question,
-        );
+        const abortController = new AbortController();
+        queryAbortControllerRef.current = abortController;
 
-        const assistantMessage: Message = {
-          id: `assistant-${Date.now()}`,
-          type: "assistant",
-          content: response.answer,
-          sources: response.sources,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
+        let accumulated = "";
+        for await (const event of apiService.streamQuery(repoId, question, abortController.signal)) {
+          if (event.error) {
+            throw new Error(event.error);
+          }
+          if (event.token) {
+            accumulated += event.token;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: accumulated } : m
+              )
+            );
+          }
+          if (event.sources) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, sources: event.sources } : m
+              )
+            );
+          }
+        }
+
+        // Empty stream → fall back to non-streaming endpoint
+        if (!accumulated) {
+          const response = await apiService.queryRepository(repoId, question);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: response.answer, sources: response.sources }
+                : m
+            )
+          );
+        }
       } catch (err: any) {
-        toast.error(
-          err.response?.data?.detail || err.message || "Failed to get answer",
-        );
-
-        const errorMessage: Message = {
-          id: `error-${Date.now()}`,
-          type: "assistant",
-          content: `Sorry, I encountered an error: ${err.response?.data?.detail || err.message || "Unknown error"}`,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, errorMessage]);
+        if (err.name === "AbortError" || err.name === "CanceledError") return;
+        // Stream error → fall back to regular query
+        try {
+          const response = await apiService.queryRepository(repoId, question);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: response.answer, sources: response.sources }
+                : m
+            )
+          );
+        } catch (fallbackErr: any) {
+          toast.error(fallbackErr.response?.data?.detail || fallbackErr.message || "Failed to get answer");
+          // Remove the empty placeholder on total failure
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        }
       } finally {
         setIsQuerying(false);
+        queryAbortControllerRef.current = null;
       }
     },
-    [currentRepoId, toast],
+    [toast],
+  );
+
+  // ── Ingest handler ──────────────────────────────────────────────────────────
+  const handleIngestRepo = useCallback(async () => {
+    if (!repoUrl.trim()) {
+      toast.error("Please enter a repository URL");
+      return;
+    }
+
+    setIsIngesting(true);
+    setIngestionProgress(0);
+    setIngestionStage("Starting...");
+    try {
+      const response = await apiService.ingestRepository(repoUrl);
+
+      await apiService.pollIngestionStatus(response.repo_id, (status) => {
+        setIngestionProgress(status.progress ?? 0);
+        setIngestionStage(status.stage ?? "Processing...");
+      });
+
+      setCurrentRepoId(response.repo_id);
+      setMessages([]);
+      setIngestionProgress(100);
+      setIngestionStage("Ready!");
+      toast.success("Repository ingested successfully!");
+
+      // Auto-summarize after ingestion (Feature 2)
+      // Use the repo_id directly from response — don't rely on currentRepoId state
+      // which may not have propagated yet.
+      setTimeout(() => {
+        handleSendMessageForRepo(
+          response.repo_id,
+          "Give me a concise overview of this repository: its main purpose, tech stack, key features, and folder structure."
+        );
+      }, 500);
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.detail ||
+          err.message ||
+          "Failed to ingest repository",
+      );
+    } finally {
+      setIsIngesting(false);
+    }
+  }, [repoUrl, toast, handleSendMessageForRepo]);
+
+
+
+
+  // Handle sending a question with cancellation support (Issue #15)
+  const handleSendMessage = useCallback(
+    async (question: string) => {
+      if (!currentRepoId) {
+        toast.error("Please ingest a repository first");
+        return;
+      }
+      await handleSendMessageForRepo(currentRepoId, question);
+    },
+    [currentRepoId, handleSendMessageForRepo, toast],
   );
 
   // Prevent flash of unstyled content
@@ -186,12 +285,39 @@ export default function Home() {
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
-                  className="text-center py-4"
+                  className="py-4 space-y-3"
                 >
-                  <LoadingSpinner
-                    variant="dots"
-                    text="Analyzing your codebase... This may take a minute."
-                  />
+                  {/* Stage Label */}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-blue-600 dark:text-blue-400 font-medium flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                      {ingestionStage}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400 font-mono">
+                      {ingestionProgress}%
+                    </span>
+                  </div>
+                  {/* Progress Bar */}
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+                    <motion.div
+                      className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-600"
+                      initial={{ width: "0%" }}
+                      animate={{ width: `${ingestionProgress}%` }}
+                      transition={{ duration: 0.5, ease: "easeOut" }}
+                    />
+                  </div>
+                  {/* Step Indicators */}
+                  <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 px-1">
+                    {["Cloning", "Reading", "Chunking", "Embedding", "Indexing"].map((step, i) => {
+                      const stepProgress = (i + 1) * 20;
+                      const isActive = ingestionProgress >= stepProgress - 10;
+                      return (
+                        <span key={step} className={isActive ? "text-blue-500 dark:text-blue-400 font-medium" : ""}>
+                          {step}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </motion.div>
               )}
 
@@ -220,16 +346,67 @@ export default function Home() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="flex justify-center"
+            className="flex flex-col items-center gap-6"
           >
-            <ChatInterface3D
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              isLoading={isQuerying}
-              disabled={!currentRepoId}
-            />
+            {/* Suggested Question Chips */}
+            {messages.length <= 2 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="w-full max-w-6xl"
+              >
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3 text-center font-medium">
+                  💡 Try asking:
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {SUGGESTED_QUESTIONS.map((q) => (
+                    <motion.button
+                      key={q}
+                      onClick={() => handleSendMessage(q)}
+                      disabled={isQuerying}
+                      className="glass px-4 py-2 rounded-full text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-transparent hover:border-blue-200 dark:hover:border-blue-700"
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      {q}
+                    </motion.button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* File Tree + Code Health sidebar + Chat */}
+            <div className="flex gap-4 w-full max-w-6xl items-start">
+              {/* Left Sidebar: File Explorer + Code Health */}
+              <div className="flex flex-col gap-4 w-72 flex-shrink-0">
+                <FileTree
+                  repoId={currentRepoId}
+                  highlightedFile={highlightedFile}
+                  onFileClick={(path) => {
+                    setHighlightedFile(path);
+                    handleSendMessage(`Explain what the file "${path}" does and its role in the project.`);
+                  }}
+                />
+                {/* Code Health Dashboard below file tree */}
+                <div className="bg-gray-900/80 backdrop-blur-sm border border-white/10 rounded-2xl p-4">
+                  <CodeHealthDashboard repoId={currentRepoId} />
+                </div>
+              </div>
+
+              {/* Chat */}
+              <div className="flex-1 min-w-0">
+                <ChatInterface3D
+                  messages={messages}
+                  onSendMessage={handleSendMessage}
+                  isLoading={isQuerying}
+                  disabled={!currentRepoId}
+                />
+              </div>
+            </div>
           </motion.div>
         )}
+
 
         {/* Features Section */}
         <motion.div

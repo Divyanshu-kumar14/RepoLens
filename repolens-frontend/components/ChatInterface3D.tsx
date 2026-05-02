@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, memo, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Card3D from "./ui/Card3D";
 import Button3D from "./ui/Button3D";
@@ -23,6 +23,7 @@ interface ChatInterface3DProps {
   onSendMessage: (message: string) => void;
   isLoading: boolean;
   disabled?: boolean;
+  streamingMessageId?: string;
 }
 
 export default function ChatInterface3D({
@@ -34,7 +35,12 @@ export default function ChatInterface3D({
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const prevMessagesLengthRef = useRef(messages.length);
+
+  // Issue #7: Request debouncing to prevent duplicate submissions
+  const lastSubmittedRef = useRef<string>("");
+  const submitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -65,13 +71,44 @@ export default function ChatInterface3D({
     prevMessagesLengthRef.current = messages.length;
   }, [messages]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (input.trim() && !disabled && !isLoading) {
-      onSendMessage(input.trim());
-      setInput("");
-    }
-  };
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+
+      const trimmedInput = input.trim();
+
+      // Prevent empty, duplicate, or rapid submissions (Issue #7: Debouncing)
+      if (!trimmedInput || disabled || isLoading) return;
+      if (trimmedInput === lastSubmittedRef.current) return;
+
+      // Clear any pending submission
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current);
+      }
+
+      // Debounce: wait 300ms before actually submitting
+      submitTimeoutRef.current = setTimeout(() => {
+        lastSubmittedRef.current = trimmedInput;
+        onSendMessage(trimmedInput);
+        setInput("");
+
+        // Reset after 2 seconds to allow re-asking same question
+        setTimeout(() => {
+          lastSubmittedRef.current = "";
+        }, 2000);
+      }, 300);
+    },
+    [input, disabled, isLoading, onSendMessage],
+  );
 
   return (
     <Card3D className="w-full max-w-5xl mx-auto" elevation={3}>
@@ -116,9 +153,14 @@ export default function ChatInterface3D({
                 </div>
               </motion.div>
             ) : (
-              messages.map((message) => (
-                <ChatMessage key={message.id} message={message} />
-              ))
+              messages.map((message) => {
+                // A message is actively streaming if it's the last assistant message with no content yet
+                const isLastAssistant =
+                  message.type === "assistant" &&
+                  message.id === messages[messages.length - 1]?.id;
+                const isStreaming = isLastAssistant && isLoading;
+                return <ChatMessage key={message.id} message={message} isStreaming={isStreaming} />;
+              })
             )}
           </AnimatePresence>
 
@@ -142,6 +184,7 @@ export default function ChatInterface3D({
 
         {/* Input Form */}
         <form
+          ref={formRef}
           onSubmit={handleSubmit}
           className="flex gap-3 items-end flex-shrink-0"
         >
@@ -149,6 +192,12 @@ export default function ChatInterface3D({
             <Input3D
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  formRef.current?.requestSubmit();
+                }
+              }}
               placeholder="Ask about your codebase..."
               disabled={disabled || isLoading}
               fullWidth
@@ -159,7 +208,7 @@ export default function ChatInterface3D({
             disabled={disabled || isLoading || !input.trim()}
             icon={<SendIcon />}
             className="!rounded-xl !py-3 !px-6"
-            onClick={() => handleSubmit(new Event("submit") as any)}
+            onClick={() => formRef.current?.requestSubmit()}
           >
             Send
           </Button3D>
@@ -169,92 +218,117 @@ export default function ChatInterface3D({
   );
 }
 
-function ChatMessage({ message }: { message: Message }) {
-  const isUser = message.type === "user";
+// Issue #8: Memoize ChatMessage to prevent unnecessary re-renders
+const ChatMessage = memo(
+  function ChatMessage({ message, isStreaming }: { message: Message; isStreaming?: boolean }) {
+    const isUser = message.type === "user";
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.3 }}
-      className={`flex items-start gap-3 ${isUser ? "flex-row-reverse" : ""}`}
-    >
-      {/* Avatar */}
-      <div
-        className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-          isUser
-            ? "bg-gradient-to-br from-green-500 to-teal-600"
-            : "bg-gradient-to-br from-blue-500 to-purple-600"
-        }`}
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.3 }}
+        className={`flex items-start gap-3 ${isUser ? "flex-row-reverse" : ""}`}
       >
-        {isUser ? (
-          <PersonIcon className="text-white text-sm" />
-        ) : (
-          <SmartToyIcon className="text-white text-sm" />
-        )}
-      </div>
-
-      {/* Message Content */}
-      <div
-        className={`max-w-[75%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-2`}
-      >
-        <motion.div
-          className={`glass rounded-2xl p-4 ${
+        {/* Avatar */}
+        <div
+          className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
             isUser
-              ? "bg-gradient-to-br from-blue-500 to-purple-600 text-white"
-              : "surface-variant"
+              ? "bg-gradient-to-br from-green-500 to-teal-600"
+              : "bg-gradient-to-br from-blue-500 to-purple-600"
           }`}
-          whileHover={{ scale: 1.02 }}
-          transition={{ duration: 0.2 }}
         >
           {isUser ? (
-            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-              {message.content}
-            </p>
+            <PersonIcon className="text-white text-sm" />
           ) : (
-            <MarkdownRenderer content={message.content} />
+            <SmartToyIcon className="text-white text-sm" />
           )}
-        </motion.div>
+        </div>
 
-        {/* Sources */}
-        {message.sources && message.sources.length > 0 && (
+        {/* Message Content */}
+        <div
+          className={`max-w-[75%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-2`}
+        >
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            className="space-y-2 w-full"
+            className={`glass rounded-2xl p-4 ${
+              isUser
+                ? "bg-gradient-to-br from-blue-500 to-purple-600 text-white"
+                : "surface-variant"
+            }`}
+            whileHover={{ scale: 1.02 }}
+            transition={{ duration: 0.2 }}
           >
-            <p className="text-xs text-gray-500 font-medium">Sources:</p>
-            {message.sources.map((source, index) => (
-              <motion.div
-                key={`${source.file_path}-${index}`}
-                className="glass rounded-lg p-3 text-xs"
-                whileHover={{ x: 5 }}
-                transition={{ duration: 0.2 }}
-              >
-                <div className="flex items-start gap-2">
-                  <CodeIcon className="text-blue-600 dark:text-blue-400 text-sm flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-mono text-blue-600 dark:text-blue-400 truncate">
-                      {source.file_path}
-                    </p>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                      {source.content}
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+            {isUser ? (
+              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                {message.content}
+              </p>
+            ) : message.content ? (
+              <>
+                <MarkdownRenderer content={message.content} />
+                {/* Blinking cursor while streaming */}
+                {isStreaming && (
+                  <motion.span
+                    className="inline-block w-0.5 h-4 bg-blue-500 ml-0.5 align-middle"
+                    animate={{ opacity: [1, 0] }}
+                    transition={{ duration: 0.6, repeat: Infinity, repeatType: "reverse" }}
+                  />
+                )}
+              </>
+            ) : (
+              /* Empty content = waiting for first token */
+              <LoadingSpinner size="sm" variant="dots" />
+            )}
           </motion.div>
-        )}
 
-        {/* Timestamp */}
-        <span className="text-xs text-gray-400">
-          {new Date(message.timestamp).toLocaleTimeString()}
-        </span>
-      </div>
-    </motion.div>
-  );
-}
+          {/* Sources */}
+          {message.sources && message.sources.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              className="space-y-2 w-full"
+            >
+              <p className="text-xs text-gray-500 font-medium">Sources:</p>
+              {message.sources.map((source, index) => (
+                <motion.div
+                  key={`${source.file_path}-${index}`}
+                  className="glass rounded-lg p-3 text-xs"
+                  whileHover={{ x: 5 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="flex items-start gap-2">
+                    <CodeIcon className="text-blue-600 dark:text-blue-400 text-sm flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-mono text-blue-600 dark:text-blue-400 truncate">
+                        {source.file_path}
+                      </p>
+                      <p className="text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                        {source.content}
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+
+          {/* Timestamp */}
+          <span className="text-xs text-gray-400">
+            {new Date(message.timestamp).toLocaleTimeString()}
+          </span>
+        </div>
+      </motion.div>
+    );
+  },
+  (prevProps, nextProps) => {
+    // Custom comparison: only re-render if message content or streaming state changed
+    return (
+      prevProps.message.id === nextProps.message.id &&
+      prevProps.message.content === nextProps.message.content &&
+      prevProps.message.sources === nextProps.message.sources &&
+      prevProps.isStreaming === nextProps.isStreaming
+    );
+  },
+);
 
 // Made with Bob

@@ -17,6 +17,7 @@ export interface IngestionStatus {
   repo_id: string;
   status: "completed" | "processing" | "failed" | "not_found";
   progress?: number;
+  stage?: string;
   error?: string;
 }
 

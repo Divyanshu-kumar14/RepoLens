@@ -25,7 +25,8 @@ class ApiService {
       headers: {
         "Content-Type": "application/json",
       },
-      timeout: 120000, // 2 minute timeout for AI operations
+      // No timeout - allow AI operations to complete naturally
+      timeout: 0,
     });
   }
 
@@ -82,22 +83,23 @@ class ApiService {
   }
 
   /**
-   * Poll ingestion status until completion or failure
+   * Poll ingestion status with adaptive polling (Issue #12)
    * @param repoId - Repository identifier
    * @param onProgress - Callback for progress updates
-   * @param pollInterval - Polling interval in milliseconds (default: 2000)
-   * @param maxAttempts - Maximum polling attempts (default: 60 = 2 minutes)
    * @param signal - AbortSignal to cancel polling
    * @returns Final ingestion status
    */
   async pollIngestionStatus(
     repoId: string,
     onProgress?: (status: IngestionStatus) => void,
-    pollInterval: number = 2000,
-    maxAttempts: number = 60,
     signal?: AbortSignal,
   ): Promise<IngestionStatus> {
     let attempts = 0;
+    let networkErrors = 0;        // consecutive network error counter
+    const maxNetworkErrors = 5;   // tolerate up to 5 transient errors before giving up
+    let pollInterval = 1000; // Start with 1 second
+    const maxInterval = 5000; // Max 5 seconds
+    const maxAttempts = 120; // 2-10 minutes depending on backoff
 
     return new Promise((resolve, reject) => {
       const poll = async () => {
@@ -121,6 +123,7 @@ class ApiService {
 
         try {
           const status = await this.getIngestionStatus(repoId);
+          networkErrors = 0; // reset on success
 
           // Call progress callback if provided
           if (onProgress) {
@@ -133,17 +136,72 @@ class ApiService {
           } else if (status.status === "failed") {
             reject(new Error(status.error || "Ingestion failed"));
           } else {
-            // Continue polling
+            // Adaptive polling: increase interval as progress increases
+            if (status.progress && status.progress > 50) {
+              pollInterval = Math.min(pollInterval * 1.2, maxInterval);
+            }
             setTimeout(poll, pollInterval);
           }
-        } catch (error) {
-          reject(error);
+        } catch (error: any) {
+          networkErrors++;
+          // Tolerate transient network errors (server restart, 503, etc.)
+          if (networkErrors <= maxNetworkErrors) {
+            console.warn(`Poll attempt ${attempts} failed (network error ${networkErrors}/${maxNetworkErrors}), retrying...`);
+            setTimeout(poll, pollInterval);
+          } else {
+            reject(error);
+          }
         }
       };
 
       // Start polling
       poll();
     });
+  }
+  /**
+   * Stream a repository query as Server-Sent Events
+   * Yields parsed SSE event objects: {token?, sources?, error?}
+   */
+  async *streamQuery(
+    repoId: string,
+    question: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<{ token?: string; sources?: { file_path: string }[]; error?: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/query/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo_id: repoId, question }),
+      signal,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: "Stream failed" }));
+      throw new Error(err.detail || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") return;
+        try {
+          yield JSON.parse(data);
+        } catch {
+          // ignore malformed SSE lines
+        }
+      }
+    }
   }
 }
 

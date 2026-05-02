@@ -7,6 +7,7 @@ import re
 import shutil
 import uuid
 import logging
+import threading
 from typing import Dict, Any
 from langchain_community.document_loaders import GitLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -17,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 # In-memory storage for ingestion status (hackathon simplicity)
 ingestion_status: Dict[str, Dict[str, Any]] = {}
+# Thread-safe lock for status updates (Bug Fix #1)
+_status_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # File-extension allow-list: only ingest readable text/code files.
@@ -84,14 +87,33 @@ def generate_repo_id() -> str:
     return str(uuid.uuid4())
 
 
-def update_status(repo_id: str, status: str, progress: int = 0, error: str = None):
-    """Update ingestion status"""
-    ingestion_status[repo_id] = {
-        "status": status,
-        "progress": progress,
-        "error": error,
-    }
-    logger.info(f"Repo {repo_id}: {status} ({progress}%)")
+def validate_repo_id(repo_id: str) -> bool:
+    """
+    Validate repo_id is a valid UUID (Bug Fix #7)
+    
+    Args:
+        repo_id: Repository identifier to validate
+    
+    Returns:
+        True if valid UUID, False otherwise
+    """
+    try:
+        uuid.UUID(repo_id)
+        return True
+    except ValueError:
+        return False
+
+
+def update_status(repo_id: str, status: str, progress: int = 0, error: str | None = None, stage: str | None = None):
+    """Update ingestion status (thread-safe)"""
+    with _status_lock:
+        ingestion_status[repo_id] = {
+            "status": status,
+            "progress": progress,
+            "error": error,
+            "stage": stage,
+        }
+    logger.info(f"Repo {repo_id}: {status} ({progress}%) — {stage or ''}")
 
 
 def get_status(repo_id: str) -> Dict[str, Any]:
@@ -125,7 +147,7 @@ def ingest_repository(repo_url: str, repo_id: str) -> None:
         repo_id:  Unique repository identifier
     """
     try:
-        update_status(repo_id, "processing", 10)
+        update_status(repo_id, "processing", 5, stage="Starting ingestion...")
 
         # ------------------------------------------------------------------ #
         # Step 1: Clone repository                                             #
@@ -137,6 +159,8 @@ def ingest_repository(repo_url: str, repo_id: str) -> None:
         if os.path.exists(repo_path):
             shutil.rmtree(repo_path)
         os.makedirs(repo_path, exist_ok=True)
+
+        update_status(repo_id, "processing", 15, stage="Cloning repository...")
 
         documents = None
         for branch in ["main", "master"]:
@@ -155,7 +179,7 @@ def ingest_repository(repo_url: str, repo_id: str) -> None:
                     file_filter=_is_allowed_file,
                 )
 
-                update_status(repo_id, "processing", 30)
+                update_status(repo_id, "processing", 35, stage="Reading code files...")
                 documents = loader.load()
                 logger.info(
                     f"Loaded {len(documents)} documents from branch '{branch}'"
@@ -180,7 +204,7 @@ def ingest_repository(repo_url: str, repo_id: str) -> None:
         # ------------------------------------------------------------------ #
         # Step 2: Split documents                                              #
         # ------------------------------------------------------------------ #
-        update_status(repo_id, "processing", 50)
+        update_status(repo_id, "processing", 50, stage=f"Chunking {len(documents)} files...")
         logger.info(f"Splitting {len(documents)} documents into chunks")
 
         text_splitter = RecursiveCharacterTextSplitter(
@@ -199,16 +223,18 @@ def ingest_repository(repo_url: str, repo_id: str) -> None:
         # ------------------------------------------------------------------ #
         # Step 3: Generate embeddings and persist to ChromaDB                 #
         # ------------------------------------------------------------------ #
-        update_status(repo_id, "processing", 70)
+        update_status(repo_id, "processing", 70, stage="Generating embeddings...")
         logger.info("Generating embeddings and storing in ChromaDB")
 
         embeddings = get_embeddings()
+
+        update_status(repo_id, "processing", 85, stage="Building vector index...")
         create_vectorstore(repo_id, chunks, embeddings)
 
         # ------------------------------------------------------------------ #
         # Step 4: Done                                                         #
         # ------------------------------------------------------------------ #
-        update_status(repo_id, "completed", 100)
+        update_status(repo_id, "completed", 100, stage="Ready!")
         logger.info(f"Repository {repo_id} ingestion completed successfully")
 
     except Exception as e:
