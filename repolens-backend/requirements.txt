@@ -43,6 +43,12 @@ click==8.3.3
     # via
     #   typer
     #   uvicorn
+cuda-bindings==13.2.0
+    # via torch
+cuda-pathfinder==1.5.4
+    # via cuda-bindings
+cuda-toolkit==13.0.2
+    # via torch
 dataclasses-json==0.6.7
     # via langchain-community
 durationpy==0.10
@@ -50,7 +56,9 @@ durationpy==0.10
 fastapi==0.136.1
     # via repolens-backend (pyproject.toml)
 filelock==3.29.0
-    # via huggingface-hub
+    # via
+    #   huggingface-hub
+    #   torch
 flatbuffers==25.12.19
     # via onnxruntime
 frozenlist==1.8.0
@@ -58,7 +66,9 @@ frozenlist==1.8.0
     #   aiohttp
     #   aiosignal
 fsspec==2026.4.0
-    # via huggingface-hub
+    # via
+    #   huggingface-hub
+    #   torch
 gitdb==4.0.12
     # via gitpython
 gitpython==3.1.49
@@ -92,9 +102,10 @@ httpx==0.28.1
 httpx-sse==0.4.3
     # via langchain-community
 huggingface-hub==1.13.0
-    # via tokenizers
-ibm-cloud-sdk-core==3.24.4
-    # via repolens-backend (pyproject.toml)
+    # via
+    #   sentence-transformers
+    #   tokenizers
+    #   transformers
 ibm-cos-sdk==2.14.3
     # via ibm-watsonx-ai
 ibm-cos-sdk-core==2.14.3
@@ -104,7 +115,9 @@ ibm-cos-sdk-core==2.14.3
 ibm-cos-sdk-s3transfer==2.14.3
     # via ibm-cos-sdk
 ibm-watsonx-ai==1.5.10
-    # via repolens-backend (pyproject.toml)
+    # via
+    #   repolens-backend (pyproject.toml)
+    #   langchain-ibm
 idna==3.13
     # via
     #   anyio
@@ -115,10 +128,16 @@ importlib-metadata==8.7.1
     # via opentelemetry-api
 importlib-resources==7.1.0
     # via chromadb
+jinja2==3.1.6
+    # via torch
 jmespath==1.0.1
     # via
     #   ibm-cos-sdk
     #   ibm-cos-sdk-core
+joblib==1.5.3
+    # via scikit-learn
+json-repair==0.59.5
+    # via langchain-ibm
 jsonpatch==1.33
     # via langchain-core
 jsonpointer==3.1.1
@@ -140,14 +159,19 @@ langchain-core==1.3.2
     #   langchain
     #   langchain-classic
     #   langchain-community
+    #   langchain-ibm
     #   langchain-text-splitters
     #   langgraph
     #   langgraph-checkpoint
     #   langgraph-prebuilt
+langchain-ibm==1.0.7
+    # via repolens-backend (pyproject.toml)
 langchain-protocol==0.0.14
     # via langchain-core
 langchain-text-splitters==1.1.2
-    # via langchain-classic
+    # via
+    #   repolens-backend (pyproject.toml)
+    #   langchain-classic
 langgraph==1.1.10
     # via langchain
 langgraph-checkpoint==4.0.3
@@ -167,24 +191,73 @@ lomond==0.3.3
     # via ibm-watsonx-ai
 markdown-it-py==4.0.0
     # via rich
+markupsafe==3.0.3
+    # via jinja2
 marshmallow==3.26.2
     # via dataclasses-json
 mdurl==0.1.2
     # via markdown-it-py
 mmh3==5.2.1
     # via chromadb
+mpmath==1.3.0
+    # via sympy
 multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
 mypy-extensions==1.1.0
     # via typing-inspect
+networkx==3.6.1
+    # via torch
 numpy==2.4.4
     # via
     #   chromadb
     #   langchain-community
     #   onnxruntime
     #   pandas
+    #   scikit-learn
+    #   scipy
+    #   sentence-transformers
+    #   transformers
+nvidia-cublas==13.1.0.3
+    # via
+    #   cuda-toolkit
+    #   nvidia-cudnn-cu13
+    #   nvidia-cusolver
+nvidia-cuda-cupti==13.0.85
+    # via cuda-toolkit
+nvidia-cuda-nvrtc==13.0.88
+    # via cuda-toolkit
+nvidia-cuda-runtime==13.0.96
+    # via cuda-toolkit
+nvidia-cudnn-cu13==9.19.0.56
+    # via torch
+nvidia-cufft==12.0.0.61
+    # via cuda-toolkit
+nvidia-cufile==1.15.1.6
+    # via cuda-toolkit
+nvidia-curand==10.4.0.35
+    # via cuda-toolkit
+nvidia-cusolver==12.0.4.66
+    # via cuda-toolkit
+nvidia-cusparse==12.6.3.3
+    # via
+    #   cuda-toolkit
+    #   nvidia-cusolver
+nvidia-cusparselt-cu13==0.8.0
+    # via torch
+nvidia-nccl-cu13==2.28.9
+    # via torch
+nvidia-nvjitlink==13.0.88
+    # via
+    #   cuda-toolkit
+    #   nvidia-cufft
+    #   nvidia-cusolver
+    #   nvidia-cusparse
+nvidia-nvshmem-cu13==3.4.5
+    # via torch
+nvidia-nvtx==13.0.85
+    # via cuda-toolkit
 oauthlib==3.3.1
     # via requests-oauthlib
 onnxruntime==1.25.1
@@ -227,6 +300,7 @@ packaging==26.2
     #   langsmith
     #   marshmallow
     #   onnxruntime
+    #   transformers
 pandas==2.3.3
     # via ibm-watsonx-ai
 propcache==0.4.1
@@ -260,15 +334,12 @@ pydantic-settings==2.14.0
     #   langchain-community
 pygments==2.20.0
     # via rich
-pyjwt==2.12.1
-    # via ibm-cloud-sdk-core
 pypika==0.51.1
     # via chromadb
 pyproject-hooks==1.2.0
     # via build
 python-dateutil==2.9.0.post0
     # via
-    #   ibm-cloud-sdk-core
     #   ibm-cos-sdk-core
     #   kubernetes
     #   pandas
@@ -289,14 +360,16 @@ pyyaml==6.0.3
     #   langchain-classic
     #   langchain-community
     #   langchain-core
+    #   transformers
     #   uvicorn
 referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
+regex==2026.4.4
+    # via transformers
 requests==2.33.1
     # via
-    #   ibm-cloud-sdk-core
     #   ibm-cos-sdk-core
     #   ibm-watsonx-ai
     #   kubernetes
@@ -317,6 +390,18 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
+safetensors==0.7.0
+    # via transformers
+scikit-learn==1.8.0
+    # via sentence-transformers
+scipy==1.17.1
+    # via
+    #   scikit-learn
+    #   sentence-transformers
+sentence-transformers==5.4.1
+    # via repolens-backend (pyproject.toml)
+setuptools==81.0.0
+    # via torch
 shellingham==1.5.4
     # via typer
 six==1.17.0
@@ -332,6 +417,8 @@ sqlalchemy==2.0.49
     #   langchain-community
 starlette==1.0.0
     # via fastapi
+sympy==1.14.0
+    # via torch
 tabulate==0.10.0
     # via ibm-watsonx-ai
 tenacity==9.1.4
@@ -339,20 +426,31 @@ tenacity==9.1.4
     #   chromadb
     #   langchain-community
     #   langchain-core
-tokenizers==0.23.1
-    # via chromadb
+threadpoolctl==3.6.0
+    # via scikit-learn
+tokenizers==0.22.2
+    # via
+    #   chromadb
+    #   transformers
+torch==2.11.0
+    # via sentence-transformers
 tqdm==4.67.3
     # via
     #   chromadb
     #   huggingface-hub
+    #   sentence-transformers
+    #   transformers
+transformers==5.7.0
+    # via sentence-transformers
+triton==3.6.0
+    # via torch
 typer==0.25.1
     # via
     #   chromadb
     #   huggingface-hub
+    #   transformers
 typing-extensions==4.15.0
     # via
-    #   aiosignal
-    #   anyio
     #   chromadb
     #   fastapi
     #   grpcio
@@ -365,9 +463,9 @@ typing-extensions==4.15.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
-    #   referencing
+    #   sentence-transformers
     #   sqlalchemy
-    #   starlette
+    #   torch
     #   typing-inspect
     #   typing-inspection
 typing-inspect==0.9.0
@@ -381,7 +479,6 @@ tzdata==2026.2
     # via pandas
 urllib3==2.6.3
     # via
-    #   ibm-cloud-sdk-core
     #   ibm-cos-sdk-core
     #   ibm-watsonx-ai
     #   kubernetes

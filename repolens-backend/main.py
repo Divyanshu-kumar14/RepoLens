@@ -5,7 +5,11 @@ FastAPI application for chat with your codebase
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
+import logging
 from app.config import settings
+
+# Configure logging to show INFO level messages
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -41,7 +45,8 @@ if __name__ == "__main__":
         app,
         host=settings.host,
         port=settings.port,
-        reload=settings.debug
+        reload=settings.debug,
+        reload_excludes=["data/*"] if settings.debug else None,
     )
 
 # Made with Bob

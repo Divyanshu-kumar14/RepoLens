@@ -2,28 +2,35 @@
 RAG Pipeline - LangChain integration with watsonx.ai
 Handles embeddings and LLM initialization
 """
-from langchain_ibm import WatsonxEmbeddings, WatsonxLLM
+from langchain_ibm import WatsonxLLM
 from langchain_community.vectorstores import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
 from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Module-level singleton to avoid re-initializing the heavy model on every call
+_embeddings_instance: HuggingFaceEmbeddings | None = None
 
-def get_embeddings() -> WatsonxEmbeddings:
+
+def get_embeddings() -> HuggingFaceEmbeddings:
     """
-    Initialize watsonx.ai embeddings model
-    Uses IBM Slate model for code embeddings
+    Initialize embeddings model (singleton)
+    Uses HuggingFace sentence-transformers
     """
+    global _embeddings_instance
+    if _embeddings_instance is not None:
+        return _embeddings_instance
+
     try:
-        embeddings = WatsonxEmbeddings(
-            model_id="ibm/slate-125m-english-rtrvr",
-            url=settings.watsonx_url,
-            apikey=settings.watsonx_api_key,
-            project_id=settings.watsonx_project_id
+        _embeddings_instance = HuggingFaceEmbeddings(
+            model_name="all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
         )
-        logger.info("Embeddings model initialized successfully")
-        return embeddings
+        logger.info("Embeddings model initialized successfully (HuggingFace)")
+        return _embeddings_instance
     except Exception as e:
         logger.error(f"Failed to initialize embeddings: {e}")
         raise
@@ -36,7 +43,7 @@ def get_llm() -> WatsonxLLM:
     """
     try:
         llm = WatsonxLLM(
-            model_id="ibm/granite-3-8b-instruct",
+            model_id="ibm/granite-8b-code-instruct",
             url=settings.watsonx_url,
             apikey=settings.watsonx_api_key,
             project_id=settings.watsonx_project_id,
@@ -54,7 +61,7 @@ def get_llm() -> WatsonxLLM:
         raise
 
 
-def get_vectorstore(repo_id: str, embeddings: WatsonxEmbeddings) -> Chroma:
+def get_vectorstore(repo_id: str, embeddings: HuggingFaceEmbeddings) -> Chroma:
     """
     Load existing ChromaDB vectorstore for a repository
     
@@ -81,7 +88,7 @@ def get_vectorstore(repo_id: str, embeddings: WatsonxEmbeddings) -> Chroma:
 def create_vectorstore(
     repo_id: str,
     documents: list,
-    embeddings: WatsonxEmbeddings
+    embeddings: HuggingFaceEmbeddings
 ) -> Chroma:
     """
     Create new ChromaDB vectorstore from documents
@@ -119,14 +126,14 @@ def build_prompt(context: str, question: str) -> str:
     Returns:
         Formatted prompt string
     """
-    prompt = f"""You are a helpful code assistant. Answer the question based on the provided code context.
+    prompt = f"""You are a helpful code assistant. Provide a clear, concise answer based on the code context below. Reference specific files or functions when relevant.
 
 CODE CONTEXT:
 {context}
 
 QUESTION: {question}
 
-ANSWER: Provide a clear, concise answer based on the code context above. Reference specific files or functions when relevant."""
+ANSWER:"""
     
     return prompt
 

@@ -3,6 +3,7 @@ Repository Ingestion Service
 Handles cloning, chunking, and embedding of repositories
 """
 import os
+import shutil
 import uuid
 import logging
 from typing import Dict, Any
@@ -33,8 +34,19 @@ def update_status(repo_id: str, status: str, progress: int = 0, error: str = Non
 
 
 def get_status(repo_id: str) -> Dict[str, Any]:
-    """Get ingestion status"""
-    return ingestion_status.get(repo_id, {"status": "not_found", "progress": 0})
+    """Get ingestion status, with chromadb fallback for server restarts"""
+    cached = ingestion_status.get(repo_id)
+    if cached:
+        return cached
+
+    # Fallback: check if a completed chromadb collection exists on disk
+    chroma_path = f"{settings.chromadb_dir}/{repo_id}"
+    if os.path.isdir(chroma_path) and os.listdir(chroma_path):
+        # Re-populate in-memory status so subsequent calls are fast
+        ingestion_status[repo_id] = {"status": "completed", "progress": 100}
+        return ingestion_status[repo_id]
+
+    return {"status": "not_found", "progress": 0}
 
 
 def ingest_repository(repo_url: str, repo_id: str) -> None:
@@ -55,20 +67,40 @@ def ingest_repository(repo_url: str, repo_id: str) -> None:
         # Update status: starting
         update_status(repo_id, "processing", 10)
         
-        # Step 1: Clone repository
+        # Step 1: Clone repository (try main, fallback to master)
         logger.info(f"Cloning repository: {repo_url}")
         repo_path = f"{settings.repositories_dir}/{repo_id}"
+        
+        # Always start with a clean directory to avoid stale git state
+        if os.path.exists(repo_path):
+            shutil.rmtree(repo_path)
         os.makedirs(repo_path, exist_ok=True)
         
-        loader = GitLoader(
-            clone_url=repo_url,
-            repo_path=repo_path,
-            branch="main"  # Try main first, fallback handled by GitLoader
-        )
+        documents = None
+        for branch in ["main", "master"]:
+            try:
+                # Clean directory before each branch attempt
+                if os.path.exists(repo_path):
+                    shutil.rmtree(repo_path)
+                os.makedirs(repo_path, exist_ok=True)
+                
+                loader = GitLoader(
+                    clone_url=repo_url,
+                    repo_path=repo_path,
+                    branch=branch,
+                    file_filter=lambda file_path: True,  # Load ALL files
+                )
+                
+                update_status(repo_id, "processing", 30)
+                documents = loader.load()
+                logger.info(f"Loaded {len(documents)} documents from branch '{branch}'")
+                break
+            except Exception as branch_err:
+                logger.warning(f"Branch '{branch}' failed: {branch_err}")
+                continue
         
-        update_status(repo_id, "processing", 30)
-        documents = loader.load()
-        logger.info(f"Loaded {len(documents)} documents from repository")
+        if documents is None:
+            raise ValueError("Could not clone repository. Neither 'main' nor 'master' branch found.")
         
         if not documents:
             raise ValueError("No documents found in repository")

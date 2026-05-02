@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Storage Configuration
     data_dir: str = "./data"
     
+    # Hugging Face Configuration
+    hf_token: Optional[str] = None
+    
     # Derived paths
     @property
     def repositories_dir(self) -> str:
