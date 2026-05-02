@@ -8,9 +8,9 @@
 import { motion, useScroll, useTransform } from "framer-motion";
 import { useRef } from "react";
 import Button3D from "./ui/Button3D";
-import CodeIcon from "@mui/icons-material/Code";
+import GitHubIcon from "@mui/icons-material/GitHub";
 import SpeedIcon from "@mui/icons-material/Speed";
-import SecurityIcon from "@mui/icons-material/Security";
+import DescriptionIcon from "@mui/icons-material/Description";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 
 export default function Hero3D() {
@@ -24,10 +24,10 @@ export default function Hero3D() {
   const opacity = useTransform(scrollYProgress, [0, 1], [1, 0]);
 
   const stats = [
-    { icon: <CodeIcon />, value: "100K+", label: "Lines Analyzed" },
+    { icon: <GitHubIcon />, value: "Any Repo", label: "Paste & Go" },
     { icon: <SpeedIcon />, value: "<2s", label: "Query Response" },
-    { icon: <SecurityIcon />, value: "100%", label: "Secure" },
-    { icon: <AutoAwesomeIcon />, value: "AI", label: "Powered" },
+    { icon: <DescriptionIcon />, value: "RAG", label: "Source-Cited Answers" },
+    { icon: <AutoAwesomeIcon />, value: "Granite", label: "IBM watsonx.ai" },
   ];
 
   return (

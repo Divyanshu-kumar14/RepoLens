@@ -67,10 +67,9 @@ export default function Input3D({
           className={`input-3d ${icon ? "pl-12" : ""} ${error ? "border-red-500" : ""} ${className}`}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          placeholder=" "
-          whileFocus={{ scale: 1.01 }}
           transition={{ duration: 0.2 }}
           {...props}
+          {...(label ? { placeholder: " " } : {})}
         />
         {label && (
           <label

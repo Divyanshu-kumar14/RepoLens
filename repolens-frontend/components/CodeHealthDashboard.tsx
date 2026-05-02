@@ -47,7 +47,10 @@ export default function CodeHealthDashboard({ repoId }: CodeHealthDashboardProps
   useEffect(() => {
     if (!repoId) return;
     fetch(`${API_BASE}/api/ingest/${repoId}/stats`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         setStats(data);
         setLoading(false);

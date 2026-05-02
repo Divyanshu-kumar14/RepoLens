@@ -172,7 +172,10 @@ export default function FileTree({ repoId, highlightedFile, onFileClick }: FileT
     if (!repoId) return;
     setLoading(true);
     fetch(`${API_BASE}/api/ingest/${repoId}/files`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         setFiles(data.files ?? []);
         setLoading(false);

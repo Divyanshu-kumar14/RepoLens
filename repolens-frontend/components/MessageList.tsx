@@ -72,7 +72,7 @@ export default function MessageList({ messages }: MessageListProps) {
                 message.type === "user" ? "text-blue-200" : "text-gray-500"
               }`}
             >
-              {message.timestamp.toLocaleTimeString()}
+              {new Date(message.timestamp).toLocaleTimeString()}
             </div>
           </div>
         </div>

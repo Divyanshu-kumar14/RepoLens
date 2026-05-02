@@ -119,17 +119,19 @@ def update_status(repo_id: str, status: str, progress: int = 0, error: str | Non
 
 
 def get_status(repo_id: str) -> Dict[str, Any]:
-    """Get ingestion status, with chromadb fallback for server restarts"""
-    cached = ingestion_status.get(repo_id)
-    if cached:
-        return cached
+    """Get ingestion status, with chromadb fallback for server restarts (thread-safe)"""
+    with _status_lock:
+        cached = ingestion_status.get(repo_id)
+        if cached:
+            return cached
 
     # Fallback: check if a completed chromadb collection exists on disk
     chroma_path = f"{settings.chromadb_dir}/{repo_id}"
     if os.path.isdir(chroma_path) and os.listdir(chroma_path):
         # Re-populate in-memory status so subsequent calls are fast
-        ingestion_status[repo_id] = {"status": "completed", "progress": 100}
-        return ingestion_status[repo_id]
+        with _status_lock:
+            ingestion_status[repo_id] = {"status": "completed", "progress": 100}
+            return ingestion_status[repo_id]
 
     return {"status": "not_found", "progress": 0}
 
@@ -281,6 +283,15 @@ def ingest_repository(repo_url: str, repo_id: str) -> None:
         error_msg = str(e)
         logger.error(f"Ingestion failed for {repo_id}: {error_msg}", exc_info=True)
         update_status(repo_id, "failed", 0, error_msg)
+    finally:
+        # Clean up cloned repo directory to avoid leaking disk space
+        repo_path = f"{settings.repositories_dir}/{repo_id}"
+        if os.path.exists(repo_path):
+            try:
+                shutil.rmtree(repo_path)
+                logger.info(f"Cleaned up cloned repo at {repo_path}")
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to clean up {repo_path}: {cleanup_err}")
 
 
 def validate_github_url(url: str) -> bool:

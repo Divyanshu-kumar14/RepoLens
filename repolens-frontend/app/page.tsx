@@ -56,6 +56,10 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CodeIcon from "@mui/icons-material/Code";
 import SpeedIcon from "@mui/icons-material/Speed";
 import SecurityIcon from "@mui/icons-material/Security";
+import AccountTreeIcon from "@mui/icons-material/AccountTree";
+import ChatIcon from "@mui/icons-material/Chat";
+import InsightsIcon from "@mui/icons-material/Insights";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 
 export default function Home() {
   const [currentRepoId, setCurrentRepoId] = useState<string | null>(null);
@@ -255,7 +259,7 @@ export default function Home() {
       <Hero3D />
 
       {/* Main Content */}
-      <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 space-y-24">
+      <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-14">
         {/* Repository Input Section */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -263,14 +267,14 @@ export default function Home() {
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
           id="features"
-          className="flex justify-center"
+          className="flex justify-center scroll-mt-24"
         >
-          <Card3D elevation={3} className="w-full max-w-3xl">
-            <div className="text-center mb-8">
-              <h2 className="text-3xl md:text-4xl font-bold mb-3">
+          <Card3D elevation={3} className="w-full max-w-3xl p-10">
+            <div className="text-center mb-10">
+              <h2 className="text-4xl md:text-5xl font-bold mb-4">
                 Get Started
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-lg">
+              <p className="text-gray-600 dark:text-gray-400 text-lg md:text-xl leading-relaxed">
                 Enter a GitHub repository URL to begin analyzing your codebase
               </p>
             </div>
@@ -325,24 +329,28 @@ export default function Home() {
                   {/* Step Indicators */}
                   <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 px-1">
                     {[
-                      "Cloning",
-                      "Reading",
-                      "Chunking",
-                      "Embedding",
-                      "Indexing",
-                    ].map((step, i) => {
-                      const stepProgress = (i + 1) * 20;
-                      const isActive = ingestionProgress >= stepProgress - 10;
+                      { label: "Cloning", at: 15 },
+                      { label: "Reading", at: 35 },
+                      { label: "Chunking", at: 50 },
+                      { label: "Embedding", at: 70 },
+                      { label: "Indexing", at: 85 },
+                    ].map((step) => {
+                      const isCompleted = ingestionProgress > step.at;
+                      const isActive =
+                        ingestionProgress >= step.at - 10 && !isCompleted;
                       return (
                         <span
-                          key={step}
+                          key={step.label}
                           className={
-                            isActive
-                              ? "text-blue-500 dark:text-blue-400 font-medium"
-                              : ""
+                            isCompleted
+                              ? "text-green-500 dark:text-green-400 font-medium"
+                              : isActive
+                                ? "text-blue-500 dark:text-blue-400 font-medium"
+                                : ""
                           }
                         >
-                          {step}
+                          {isCompleted ? "✓ " : ""}
+                          {step.label}
                         </span>
                       );
                     })}
@@ -449,43 +457,46 @@ export default function Home() {
           </motion.div>
         )}
 
-        {/* Features Section */}
+        {/* How It Works Section */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
           id="how-it-works"
-          className="space-y-12"
+          className="space-y-12 scroll-mt-24"
         >
           <div className="text-center max-w-3xl mx-auto">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
               How It Works
             </h2>
-            <p className="text-gray-600 dark:text-gray-400 text-lg">
-              RepoLens uses advanced AI to understand and analyze your codebase
+            <p className="text-gray-600 dark:text-gray-400 text-lg md:text-xl leading-relaxed">
+              Three steps to understand any codebase
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
             {[
               {
-                icon: <CodeIcon className="text-4xl" />,
-                title: "Code Analysis",
+                icon: <GitHubIcon className="text-4xl" />,
+                step: "01",
+                title: "Paste a GitHub URL",
                 description:
-                  "Deep semantic understanding of your repository structure and code patterns",
+                  "Drop any public repository link — RepoLens clones it, chunks every file, and generates semantic embeddings in seconds.",
               },
               {
-                icon: <SpeedIcon className="text-4xl" />,
-                title: "Instant Answers",
+                icon: <AutoAwesomeIcon className="text-4xl" />,
+                step: "02",
+                title: "AI Understands Your Code",
                 description:
-                  "Get responses in seconds with relevant source code references",
+                  "IBM Granite models via watsonx.ai build a deep understanding of your entire codebase using RAG with ChromaDB vector search.",
               },
               {
-                icon: <SecurityIcon className="text-4xl" />,
-                title: "Secure & Private",
+                icon: <ChatIcon className="text-4xl" />,
+                step: "03",
+                title: "Ask Anything",
                 description:
-                  "Your code is processed securely with enterprise-grade AI",
+                  "Chat in plain English — get instant, streaming answers with source file citations. Explore via the interactive mind map and file tree.",
               },
             ].map((feature, index) => (
               <motion.div
@@ -493,16 +504,19 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: index * 0.1 }}
+                transition={{ duration: 0.4, delay: index * 0.15 }}
               >
                 <Card3D className="text-center h-full flex flex-col items-center justify-center p-8">
+                  <div className="text-xs font-bold text-blue-500 dark:text-blue-400 mb-3 tracking-widest">
+                    STEP {feature.step}
+                  </div>
                   <div className="text-blue-600 dark:text-blue-400 mb-4 flex items-center justify-center">
                     {feature.icon}
                   </div>
                   <h3 className="text-xl font-semibold mb-3">
                     {feature.title}
                   </h3>
-                  <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+                  <p className="text-gray-600 dark:text-gray-400 leading-relaxed text-sm">
                     {feature.description}
                   </p>
                 </Card3D>
@@ -518,36 +532,67 @@ export default function Home() {
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
           id="about"
-          className="flex justify-center"
+          className="scroll-mt-24 space-y-10"
         >
-          <Card3D elevation={3} className="w-full max-w-4xl text-center p-8">
-            <h2 className="text-3xl md:text-4xl font-bold mb-6">
+          <div className="text-center max-w-3xl mx-auto">
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
               About RepoLens
             </h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-8 text-lg leading-relaxed max-w-3xl mx-auto">
-              RepoLens is powered by IBM watsonx.ai Granite models, providing
-              enterprise-grade AI capabilities for code understanding and
-              analysis. Built with FastAPI, LangChain, and ChromaDB for optimal
-              performance.
+            <p className="text-gray-600 dark:text-gray-400 text-lg md:text-xl leading-relaxed">
+              Built in a single day with IBM Bob — from idea to working product
             </p>
-            <div className="flex flex-wrap gap-3 justify-center">
-              <span className="glass px-5 py-2 rounded-full text-sm font-medium">
-                FastAPI
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
+            {[
+              {
+                icon: <ChatIcon className="text-3xl" />,
+                title: "Natural Language Chat",
+                description: "Ask questions in plain English and get streaming, source-cited answers in real time.",
+              },
+              {
+                icon: <AccountTreeIcon className="text-3xl" />,
+                title: "Interactive Mind Map",
+                description: "Explore your entire repo structure visually — pan, zoom, expand folders, click to query.",
+              },
+              {
+                icon: <InsightsIcon className="text-3xl" />,
+                title: "Code Health Dashboard",
+                description: "Language breakdown, file distribution, and complexity stats at a glance.",
+              },
+              {
+                icon: <AutoAwesomeIcon className="text-3xl" />,
+                title: "Powered by Granite",
+                description: "IBM watsonx.ai Granite models with LangChain RAG and ChromaDB vector search.",
+              },
+            ].map((item, index) => (
+              <motion.div
+                key={item.title}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.4, delay: index * 0.1 }}
+              >
+                <Card3D className="h-full flex flex-col items-center text-center p-6">
+                  <div className="text-blue-600 dark:text-blue-400 mb-3 flex items-center justify-center">
+                    {item.icon}
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2">{item.title}</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                    {item.description}
+                  </p>
+                </Card3D>
+              </motion.div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-3 justify-center pt-2">
+            {["FastAPI", "LangChain", "watsonx.ai", "ChromaDB", "Next.js", "IBM Bob"].map((tech) => (
+              <span key={tech} className="glass px-5 py-2 rounded-full text-sm font-medium">
+                {tech}
               </span>
-              <span className="glass px-5 py-2 rounded-full text-sm font-medium">
-                LangChain
-              </span>
-              <span className="glass px-5 py-2 rounded-full text-sm font-medium">
-                watsonx.ai
-              </span>
-              <span className="glass px-5 py-2 rounded-full text-sm font-medium">
-                ChromaDB
-              </span>
-              <span className="glass px-5 py-2 rounded-full text-sm font-medium">
-                Next.js
-              </span>
-            </div>
-          </Card3D>
+            ))}
+          </div>
         </motion.div>
       </section>
 

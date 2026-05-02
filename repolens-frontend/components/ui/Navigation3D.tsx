@@ -6,7 +6,7 @@
 "use client";
 
 import { motion, useScroll, useTransform } from "framer-motion";
-import CodeIcon from "@mui/icons-material/Code";
+import Image from "next/image";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import GitHubIcon from "@mui/icons-material/GitHub";
@@ -22,8 +22,6 @@ export default function Navigation3D({
 }: Navigation3DProps) {
   const { scrollY } = useScroll();
   const navOpacity = useTransform(scrollY, [0, 100], [0.95, 1]);
-  const navBlur = useTransform(scrollY, [0, 100], [10, 20]);
-  const isScrolled = useTransform(scrollY, [0, 20], [false, true]);
 
   return (
     <motion.nav
@@ -37,10 +35,7 @@ export default function Navigation3D({
     >
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <motion.div
-          className="glass rounded-2xl px-6 py-4 transition-all duration-300 elevation-2"
-          style={{
-            backdropFilter: `blur(${navBlur}px)`,
-          }}
+          className="rounded-2xl px-6 py-4 transition-all duration-300 elevation-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-white/10"
         >
           <div className="flex items-center justify-between">
             {/* Logo */}
@@ -49,9 +44,13 @@ export default function Navigation3D({
               whileHover={{ scale: 1.05 }}
               transition={{ duration: 0.2 }}
             >
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center elevation-3">
-                <CodeIcon className="text-white" />
-              </div>
+              <Image
+                src="/logo.png"
+                alt="RepoLens"
+                width={40}
+                height={40}
+                className="rounded-xl"
+              />
               <div>
                 <h1 className="text-xl font-bold text-gradient">RepoLens</h1>
                 <p className="text-xs text-gray-500">Chat with Your Code</p>

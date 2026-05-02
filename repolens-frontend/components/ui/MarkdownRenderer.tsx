@@ -320,3 +320,5 @@ export default function MarkdownRenderer({ content }: { content: string }) {
 
   return <div className="space-y-0.5">{rendered}</div>;
 }
+
+// Made with Bob

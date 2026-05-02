@@ -582,3 +582,5 @@ export default function MindMapVisualization({
     </motion.div>
   );
 }
+
+// Made with Bob

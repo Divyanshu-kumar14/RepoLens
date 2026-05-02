@@ -1,339 +1,236 @@
-# 🔍 RepoLens - Chat with Your Codebase
+# RepoLens 🔍
 
-AI-powered codebase analysis using watsonx.ai Granite, LangChain, and ChromaDB.
+**Chat with your codebase using AI-powered natural language understanding**
+
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
+[![watsonx.ai](https://img.shields.io/badge/watsonx.ai-Granite-purple.svg)](https://www.ibm.com/watsonx)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+<p align="center">
+  <img src="docs/hero-screenshot.png" alt="RepoLens - Chat with Your Codebase" width="100%" />
+</p>
+
+---
 
 ## Overview
 
-RepoLens allows you to have natural language conversations with any public GitHub repository. Simply provide a repository URL, and RepoLens will:
+RepoLens transforms how developers understand and navigate unfamiliar codebases. Instead of spending hours reading through files, documentation, and code comments, simply paste a GitHub repository URL and ask questions in natural language.
 
-1. **Clone and analyze** the repository
-2. **Chunk and embed** the code using watsonx.ai
-3. **Store embeddings** in ChromaDB for fast retrieval
-4. **Answer questions** using IBM Granite LLM with RAG (Retrieval-Augmented Generation)
+**The Problem:** Developers waste countless hours trying to understand new codebases—tracing function calls, understanding architecture decisions, and finding relevant code sections. Traditional code search tools require exact keyword matches and don't understand context or intent.
 
-## 🎯 Features
+**The Solution:** RepoLens uses advanced AI to create a semantic understanding of your entire codebase. Ask questions like "How does authentication work?" or "What are the main API endpoints?" and get instant, accurate answers with source code references. It's like having an expert developer who has already read and understood every line of code.
 
-✅ **GitHub Repository Ingestion** - Automatically clone and process any public repo  
-✅ **Real-time Progress Tracking** - Visual feedback during ingestion  
-✅ **Natural Language Queries** - Ask questions in plain English  
-✅ **Source Code References** - Answers include file paths and context  
-✅ **Powered by watsonx.ai** - Uses IBM Granite 3-8B-Instruct model  
-✅ **Fast Vector Search** - ChromaDB for efficient code retrieval
+**How It Works:** Paste any public GitHub repository URL, and RepoLens clones it, intelligently chunks the code, generates semantic embeddings using HuggingFace transformers, and stores them in a ChromaDB vector database. When you ask a question, it retrieves the most relevant code sections and uses IBM's Granite language models via watsonx.ai to generate detailed, contextual answers with source citations—all streamed to you in real-time.
+
+---
+
+## ✨ Key Features
+
+- **🤖 Natural Language Chat** - Ask questions about any GitHub repository in plain English and get intelligent, context-aware answers
+- **⚡ Real-Time Streaming** - Responses stream token-by-token using Server-Sent Events (SSE) for instant feedback
+- **🗺️ Interactive Mind Map** - Visualize your entire repository structure with an interactive, zoomable mind map featuring pan, zoom, expand/collapse controls
+- **📊 Code Health Dashboard** - Analyze your codebase with language breakdown charts, file statistics, and top directory insights
+- **🌲 Smart File Tree** - Browse repository files with click-to-explain functionality—click any file to get an AI explanation of its purpose
+- **💡 Suggested Questions** - Smart question chips help you get started with relevant queries about your codebase
+- **📝 Auto-Summary on Ingestion** - Automatically generates a comprehensive repository overview after ingestion completes
+- **🔍 RAG Pipeline** - Retrieval-Augmented Generation with ChromaDB vector store ensures accurate, source-backed answers
+- **📚 Source Citations** - Every answer includes references to the specific files used, with relevance scoring
+- **🎨 Material Design 3** - Beautiful, modern UI with 3D depth effects, smooth animations, and dark mode support
+- **⚙️ Optimized Performance** - Query caching, vectorstore pooling, adaptive polling, and code splitting for blazing-fast responses
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technologies |
+|-------|-------------|
+| **Backend** | Python 3.11+, FastAPI, LangChain, ChromaDB, ibm-watsonx-ai, HuggingFace Transformers |
+| **Frontend** | Next.js 16, React 19, TypeScript, Framer Motion, Material UI, Tailwind CSS |
+| **AI Engine** | IBM watsonx.ai (Granite 4 H Small), HuggingFace Embeddings (all-MiniLM-L6-v2) |
+| **Vector Store** | ChromaDB with HNSW indexing for fast similarity search |
+| **Package Management** | uv (Python), npm (Node.js) |
+
+---
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────┐
-│  Next.js        │
-│  Frontend       │
-│  (Port 3000)    │
-└────────┬────────┘
-         │ HTTP/REST
-         ▼
-┌─────────────────┐      ┌──────────────┐
-│  FastAPI        │◄────►│  ChromaDB    │
-│  Backend        │      │  Vector DB   │
-│  (Port 8000)    │      └──────────────┘
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  watsonx.ai     │
-│  Granite LLM    │
-│  + Embeddings   │
-└─────────────────┘
+```mermaid
+flowchart TD
+    A[User] -->|Paste GitHub URL| B[Next.js Frontend]
+    B -->|Ingest Request| C[FastAPI Backend]
+    C -->|Clone Repository| D[Git]
+    D -->|Filter & Chunk| E[LangChain Document Loaders]
+    E -->|Generate Embeddings| F[HuggingFace Transformers]
+    F -->|Store Vectors| G[ChromaDB]
+    G -->|Vector Store| C
+
+    A -->|Ask Question| B
+    B -->|Query Request| C
+    C -->|Retrieve Relevant Chunks| G
+    G -->|Top-K Documents| C
+    C -->|Build Prompt| H[LangChain Prompt Template]
+    H -->|Generate Answer| I[watsonx.ai Granite LLM]
+    I -->|Stream Response| B
+    B -->|Display Answer| A
 ```
 
-## 🚀 Quick Start
+**Key Components:**
+1. **Ingestion Pipeline** - Clones repositories, filters relevant files, chunks code, generates embeddings, and stores in ChromaDB
+2. **Query Pipeline** - Retrieves relevant code chunks, builds structured prompts, generates answers with Granite LLM
+3. **Streaming Interface** - Real-time token streaming via Server-Sent Events (SSE)
+4. **Visualization Layer** - Interactive mind maps, file trees, and code health dashboards
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- uv (Python package manager)
+- Git
 
-- **Python 3.11+** with `uv` package manager
-- **Node.js 18+** and npm
-- **watsonx.ai API Key** and Project ID
-- **Git** installed
-
-### 1. Clone the Repository
-
+### Backend Setup
 ```bash
-git clone <your-repo-url>
-cd RepoLens
-```
-
-### 2. Backend Setup
-
-```bash
+# Navigate to backend directory
 cd repolens-backend
 
-# Create .env file
+# Copy environment variables template
 cp .env.example .env
-# Edit .env and add your watsonx.ai credentials
 
-# Install dependencies with uv
+# Edit .env with your watsonx.ai credentials
+nano .env
+
+# Install dependencies using uv
 uv sync
 
-# Run the backend
+# Start the FastAPI server
 uv run uvicorn main:app --reload
 ```
 
-Backend will be available at `http://localhost:8000`
-
-### 3. Frontend Setup
-
+### Frontend Setup
 ```bash
+# Navigate to frontend directory
 cd repolens-frontend
+
+# Copy environment variables template
+cp .env.example .env.local
 
 # Install dependencies
 npm install
 
-# Configure environment (optional)
-cp .env.example .env.local
-
-# Run the frontend
+# Start the Next.js development server
 npm run dev
 ```
 
-Frontend will be available at `http://localhost:3000`
+### Access the Application
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### 4. Use RepoLens
+---
 
-1. Open `http://localhost:3000` in your browser
-2. Enter a GitHub repository URL (e.g., `https://github.com/user/repo`)
-3. Click "Ingest" and wait for processing to complete
-4. Ask questions about the codebase!
+## 🔧 Environment Variables
+
+### Backend (.env)
+| Variable | Description | Required |
+|-----------|-------------|----------|
+| `WATSONX_API_KEY` | IBM watsonx.ai API key | ✅ |
+| `WATSONX_PROJECT_ID` | watsonx.ai project ID | ✅ |
+| `WATSONX_URL` | watsonx.ai service URL (default: `https://us-south.ml.cloud.ibm.com`) | ❌ |
+| `ENVIRONMENT` | Application environment (default: `development`) | ❌ |
+| `DEBUG` | Debug mode (default: `true`) | ❌ |
+| `HOST` | Server host (default: `0.0.0.0`) | ❌ |
+| `PORT` | Server port (default: `8000`) | ❌ |
+| `DATA_DIR` | Data storage directory (default: `./data`) | ❌ |
+| `HF_TOKEN` | HuggingFace token (optional) | ❌ |
+
+### Frontend (.env.local)
+| Variable | Description | Required |
+|-----------|-------------|----------|
+| `NEXT_PUBLIC_API_URL` | Backend API URL (default: `http://localhost:8000`) | ❌ |
+
+---
+
+## 📡 API Endpoints
+
+| Endpoint | Method | Description | Response |
+|----------|--------|-------------|----------|
+| `/api/health` | GET | Health check | `HealthResponse` |
+| `/api/ingest` | POST | Ingest a GitHub repository | `IngestResponse` |
+| `/api/ingest/{repo_id}/status` | GET | Get ingestion status | `IngestionStatus` |
+| `/api/ingest/{repo_id}/files` | GET | List all files in repository | `List[file_paths]` |
+| `/api/ingest/{repo_id}/stats` | GET | Code health statistics | `RepoStats` |
+| `/api/ingest/{repo_id}/structure` | GET | Repository structure for mind map | `RepoStructure` |
+| `/api/query` | POST | Query repository (non-streaming) | `QueryResponse` |
+| `/api/query/stream` | POST | Query repository (streaming SSE) | `Stream[token]` |
+
+---
 
 ## 📁 Project Structure
 
 ```
-RepoLens/
-├── repolens-backend/          # Python FastAPI backend
-│   ├── app/
-│   │   ├── api/              # API routes
-│   │   ├── services/         # Business logic
-│   │   ├── config.py         # Configuration
-│   │   ├── models.py         # Pydantic models
-│   │   └── rag.py            # RAG pipeline
-│   ├── data/                 # Cloned repos & vector DB
-│   ├── main.py               # FastAPI entry point
-│   └── pyproject.toml        # Python dependencies
+repolens/
+├── repolens-backend/          # FastAPI backend
+│   ├── app/                   # Application code
+│   │   ├── api/               # API routes
+│   │   ├── services/          # Business logic
+│   │   ├── config.py          # Configuration
+│   │   ├── models.py          # Pydantic models
+│   │   └── rag.py             # RAG pipeline
+│   ├── main.py                # FastAPI entry point
+│   └── pyproject.toml         # Python dependencies
 │
-├── repolens-frontend/         # Next.js React frontend
-│   ├── app/                  # Next.js app router
-│   ├── components/           # React components
-│   ├── services/             # API service layer
-│   ├── types/                # TypeScript types
-│   └── package.json          # Node dependencies
-│
-├── bob_sessions/             # Hackathon compliance
-├── ARCHITECTURE_BLUEPRINT.md # Detailed architecture
-└── README.md                 # This file
+└── repolens-frontend/         # Next.js frontend
+    ├── app/                   # Next.js app router
+    │   └── page.tsx           # Main page
+    ├── components/            # React components
+    │   ├── ChatInterface3D.tsx # 3D chat interface
+    │   ├── FileTree.tsx        # Interactive file tree
+    │   ├── MindMapVisualization.tsx # Mind map visualization
+    │   └── CodeHealthDashboard.tsx # Code health stats
+    ├── services/              # API service layer
+    │   └── api.ts             # API client
+    └── types/                  # TypeScript types
 ```
-
-## 🔧 Configuration
-
-### Backend Environment Variables
-
-Create `repolens-backend/.env`:
-
-```bash
-# watsonx.ai Configuration (REQUIRED)
-WATSONX_API_KEY=your_api_key_here
-WATSONX_PROJECT_ID=your_project_id
-WATSONX_URL=https://us-south.ml.cloud.ibm.com
-
-# Application Settings
-ENVIRONMENT=development
-DEBUG=true
-HOST=0.0.0.0
-PORT=8000
-DATA_DIR=./data
-```
-
-### Frontend Environment Variables
-
-Create `repolens-frontend/.env.local`:
-
-```bash
-# Backend API URL
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-## 📚 API Documentation
-
-Once the backend is running, visit:
-
-- **Swagger UI:** `http://localhost:8000/docs`
-- **ReDoc:** `http://localhost:8000/redoc`
-
-### Key Endpoints
-
-| Method | Endpoint                       | Description                     |
-| ------ | ------------------------------ | ------------------------------- |
-| POST   | `/api/ingest`                  | Submit repository for ingestion |
-| GET    | `/api/ingest/{repo_id}/status` | Check ingestion progress        |
-| POST   | `/api/query`                   | Ask questions about repository  |
-| GET    | `/api/health`                  | Health check                    |
-
-## 💡 Example Usage
-
-### Example Questions
-
-Once a repository is ingested, try asking:
-
-- "What does this repository do?"
-- "How does the authentication work?"
-- "Explain the main components of this project"
-- "What dependencies does this project use?"
-- "How is error handling implemented?"
-- "Show me the API endpoints"
-
-### Example Repositories to Try
-
-- Small projects (< 100 files) work best for demos
-- Public repositories only
-- Examples:
-  - `https://github.com/user/small-flask-app`
-  - `https://github.com/user/simple-react-app`
-
-## 🛠️ Technology Stack
-
-### Backend
-
-- **FastAPI** - Modern Python web framework
-- **LangChain** - LLM orchestration framework
-- **watsonx.ai** - IBM Granite LLM and embeddings
-- **ChromaDB** - Vector database for embeddings
-- **GitPython** - Git repository operations
-
-### Frontend
-
-- **Next.js 14** - React framework with App Router
-- **TypeScript** - Type-safe JavaScript
-- **Tailwind CSS** - Utility-first CSS framework
-- **Axios** - HTTP client
-
-## 🐛 Troubleshooting
-
-### Backend Issues
-
-**Problem:** `ImportError: No module named 'app'`
-
-```bash
-cd repolens-backend
-uv sync
-```
-
-**Problem:** `watsonx.ai authentication failed`
-
-- Verify API key and project ID in `.env`
-- Check that credentials are valid in watsonx.ai console
-
-**Problem:** `ChromaDB persistence error`
-
-```bash
-rm -rf repolens-backend/data/chromadb/*
-```
-
-### Frontend Issues
-
-**Problem:** `Cannot connect to backend`
-
-- Verify backend is running on port 8000
-- Check `NEXT_PUBLIC_API_URL` in `.env.local`
-- Verify CORS is enabled in backend
-
-**Problem:** `Module not found errors`
-
-```bash
-cd repolens-frontend
-rm -rf node_modules package-lock.json
-npm install
-```
-
-## 📝 Development
-
-### Running Tests
-
-Backend:
-
-```bash
-cd repolens-backend
-uv run pytest
-```
-
-Frontend:
-
-```bash
-cd repolens-frontend
-npm test
-```
-
-### Code Quality
-
-Backend:
-
-```bash
-cd repolens-backend
-uv run ruff check .
-uv run black .
-```
-
-Frontend:
-
-```bash
-cd repolens-frontend
-npm run lint
-```
-
-## 🚢 Deployment
-
-### Backend Deployment
-
-1. Set production environment variables
-2. Use production WSGI server (Gunicorn)
-3. Configure reverse proxy (Nginx)
-4. Set up SSL certificates
-
-### Frontend Deployment
-
-1. Build production bundle: `npm run build`
-2. Deploy to Vercel, Netlify, or custom server
-3. Update `NEXT_PUBLIC_API_URL` to production backend
-
-## 📄 License
-
-See LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- **IBM watsonx.ai** - For providing the Granite LLM and embeddings
-- **LangChain** - For the RAG framework
-- **ChromaDB** - For vector storage
-- **FastAPI** - For the backend framework
-- **Next.js** - For the frontend framework
-
-## 📞 Support
-
-For issues and questions:
-
-1. Check the troubleshooting section above
-2. Review API documentation at `/docs`
-3. Check backend logs for detailed error messages
 
 ---
 
-**Built for IBM watsonx.ai Hackathon**  
-**Made with Bob - AI Coding Assistant**
+## 🤖 IBM watsonx.ai Integration
 
-## 🎯 Hackathon Compliance
+RepoLens leverages IBM's enterprise-grade watsonx.ai platform with these key features:
 
-This project includes:
+1. **Granite 4 H Small Model** - Uses the `ibm/granite-4-h-small` model, optimized for code understanding and detailed technical explanations
+2. **IAM Token Management** - Automatically handles token refresh (tokens expire every 60 minutes) through the LangChain WatsonxLLM client
+3. **Optimized Parameters** - Configured with:
+   - `max_new_tokens=1500` for detailed answers
+   - `temperature=0.2` for precise, factual responses
+   - Custom stop sequences to prevent hallucinated follow-ups
+4. **Structured Prompting** - Uses a carefully designed prompt template that instructs the model to:
+   - Provide concise summaries first
+   - Reference specific file paths and code patterns
+   - Explain connections between different code sections
+   - Avoid inventing non-existent code
 
-- ✅ `bob_sessions/` directory with session logs
-- ✅ `AGENTS.md` with agent rules
-- ✅ Complete source code
-- ✅ Documentation and README
-- ✅ Working demo
+The backend automatically refreshes IAM tokens as needed, ensuring uninterrupted service even during long sessions.
 
-**Demo Video:** [Link to demo video]  
-**Live Demo:** [Link to deployed app]
+---
+
+## 🛠️ Built with IBM Bob
+
+RepoLens was developed with **IBM Bob** as an AI pair programmer throughout the entire lifecycle:
+
+- **Architecture** — RAG pipeline design, ChromaDB schema, FastAPI project structure, streaming SSE system
+- **Code Generation** — watsonx.ai IAM token refresh, SSE streaming endpoint, recursive tree builder, interactive SVG mind map
+- **Debugging** — Diagnosed ingestion timeouts, duplicate node ID collisions, React key errors, model compatibility issues
+- **UI/UX** — Material Design 3 component system, glassmorphism effects, animated 3D cards, dark mode
+- **Documentation** — README, AGENTS.md, API docs, inline code comments
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+---
+
+**Built with ❤️ using IBM watsonx.ai and IBM Bob**

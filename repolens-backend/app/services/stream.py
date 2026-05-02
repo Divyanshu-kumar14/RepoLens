@@ -50,12 +50,9 @@ def _stream_llm(prompt: str):
     """
     llm = get_llm()
     chunks = []
-    try:
-        for chunk in llm.stream(prompt):
-            if chunk:
-                chunks.append(chunk)
-    except Exception as e:
-        raise e
+    for chunk in llm.stream(prompt):
+        if chunk:
+            chunks.append(chunk)
     return chunks
 
 
@@ -124,3 +121,5 @@ async def stream_query_repository(repo_id: str, question: str) -> AsyncGenerator
         logger.error(f"Stream query failed for repo {repo_id}: {e}", exc_info=True)
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield "data: [DONE]\n\n"
+
+# Made with Bob

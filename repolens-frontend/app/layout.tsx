@@ -14,6 +14,10 @@ export const metadata: Metadata = {
     "developer tools",
   ],
   authors: [{ name: "RepoLens Team" }],
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/icon-192.png",
+  },
 };
 
 export const viewport: Viewport = {

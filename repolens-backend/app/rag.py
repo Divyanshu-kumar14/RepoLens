@@ -144,6 +144,10 @@ def create_vectorstore(
     try:
         persist_directory = f"{settings.chromadb_dir}/{repo_id}"
         
+        # Invalidate stale cache entry before creating a new vectorstore
+        with _cache_lock:
+            _vectorstore_cache.pop(repo_id, None)
+        
         # Create vectorstore with optimized HNSW index parameters
         vectorstore = Chroma.from_documents(
             documents=documents,
@@ -215,11 +219,17 @@ def clean_answer(raw: str) -> str:
     # Strip leading/trailing whitespace
     answer = raw.strip()
 
-    # Remove echoed prompt markers that occasionally appear at the start
+    # Remove echoed prompt markers that occasionally appear at the start.
+    # Loop until no more prefixes match — handles stacked markers like
+    # '<|assistant|>Answer: ...' which the old single-pass missed.
     prefixes_to_strip = ["ANSWER:", "Answer:", "assistant:", "<|assistant|>"]
-    for prefix in prefixes_to_strip:
-        if answer.startswith(prefix):
-            answer = answer[len(prefix):].lstrip()
+    changed = True
+    while changed:
+        changed = False
+        for prefix in prefixes_to_strip:
+            if answer.startswith(prefix):
+                answer = answer[len(prefix):].lstrip()
+                changed = True
 
     return answer
 

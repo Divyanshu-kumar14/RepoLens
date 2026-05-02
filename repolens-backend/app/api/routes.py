@@ -257,7 +257,7 @@ async def get_repo_stats(repo_id: str):
 
                 # Top-level directory breakdown
                 parts = path.replace("\\", "/").split("/")
-                top_dir = parts[1] if len(parts) > 2 else parts[0]
+                top_dir = parts[0] if parts else "."
                 dir_counts[top_dir] = dir_counts.get(top_dir, 0) + 1
 
         # Sort and limit
