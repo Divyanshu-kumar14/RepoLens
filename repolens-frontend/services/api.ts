@@ -95,12 +95,11 @@ class ApiService {
     signal?: AbortSignal,
   ): Promise<IngestionStatus> {
     let attempts = 0;
-    let networkErrors = 0;        // consecutive network error counter
-    const maxNetworkErrors = 5;   // tolerate up to 5 transient errors before giving up
-    let pollInterval = 1000;      // start at 1s
-    const maxInterval = 3000;     // cap at 3s (don't spam but stay responsive)
-    const maxAttempts = 240;      // 4 min at 1s, longer with backoff — outlasts 180s clone
-
+    let networkErrors = 0; // consecutive network error counter
+    const maxNetworkErrors = 5; // tolerate up to 5 transient errors before giving up
+    let pollInterval = 1000; // start at 1s
+    const maxInterval = 3000; // cap at 3s (don't spam but stay responsive)
+    const maxAttempts = 240; // 4 min at 1s, longer with backoff — outlasts 180s clone
 
     return new Promise((resolve, reject) => {
       const poll = async () => {
@@ -147,7 +146,9 @@ class ApiService {
           networkErrors++;
           // Tolerate transient network errors (server restart, 503, etc.)
           if (networkErrors <= maxNetworkErrors) {
-            console.warn(`Poll attempt ${attempts} failed (network error ${networkErrors}/${maxNetworkErrors}), retrying...`);
+            console.warn(
+              `Poll attempt ${attempts} failed (network error ${networkErrors}/${maxNetworkErrors}), retrying...`,
+            );
             setTimeout(poll, pollInterval);
           } else {
             reject(error);
@@ -159,6 +160,17 @@ class ApiService {
       poll();
     });
   }
+
+  /**
+   * Get repository structure for mind map visualization
+   * @param repoId - Repository identifier
+   * @returns Repository structure with directory hierarchy
+   */
+  async getRepositoryStructure(repoId: string): Promise<any> {
+    const response = await this.client.get(`/api/ingest/${repoId}/structure`);
+    return response.data;
+  }
+
   /**
    * Stream a repository query as Server-Sent Events
    * Yields parsed SSE event objects: {token?, sources?, error?}
@@ -167,7 +179,11 @@ class ApiService {
     repoId: string,
     question: string,
     signal?: AbortSignal,
-  ): AsyncGenerator<{ token?: string; sources?: { file_path: string }[]; error?: string }> {
+  ): AsyncGenerator<{
+    token?: string;
+    sources?: { file_path: string }[];
+    error?: string;
+  }> {
     const response = await fetch(`${API_BASE_URL}/api/query/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -176,7 +192,9 @@ class ApiService {
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ detail: "Stream failed" }));
+      const err = await response
+        .json()
+        .catch(() => ({ detail: "Stream failed" }));
       throw new Error(err.detail || `HTTP ${response.status}`);
     }
 

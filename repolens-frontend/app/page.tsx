@@ -31,10 +31,21 @@ const FileTree = dynamic(() => import("@/components/FileTree"), {
   ssr: false,
 });
 
-const CodeHealthDashboard = dynamic(() => import("@/components/CodeHealthDashboard"), {
-  loading: () => null,
-  ssr: false,
-});
+const MindMapVisualization = dynamic(
+  () => import("@/components/MindMapVisualization"),
+  {
+    loading: () => null,
+    ssr: false,
+  },
+);
+
+const CodeHealthDashboard = dynamic(
+  () => import("@/components/CodeHealthDashboard"),
+  {
+    loading: () => null,
+    ssr: false,
+  },
+);
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/useToast";
 import { apiService } from "@/services/api";
@@ -109,7 +120,11 @@ export default function Home() {
         queryAbortControllerRef.current = abortController;
 
         let accumulated = "";
-        for await (const event of apiService.streamQuery(repoId, question, abortController.signal)) {
+        for await (const event of apiService.streamQuery(
+          repoId,
+          question,
+          abortController.signal,
+        )) {
           if (event.error) {
             throw new Error(event.error);
           }
@@ -117,15 +132,15 @@ export default function Home() {
             accumulated += event.token;
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId ? { ...m, content: accumulated } : m
-              )
+                m.id === assistantId ? { ...m, content: accumulated } : m,
+              ),
             );
           }
           if (event.sources) {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId ? { ...m, sources: event.sources } : m
-              )
+                m.id === assistantId ? { ...m, sources: event.sources } : m,
+              ),
             );
           }
         }
@@ -137,8 +152,8 @@ export default function Home() {
             prev.map((m) =>
               m.id === assistantId
                 ? { ...m, content: response.answer, sources: response.sources }
-                : m
-            )
+                : m,
+            ),
           );
         }
       } catch (err: any) {
@@ -150,11 +165,15 @@ export default function Home() {
             prev.map((m) =>
               m.id === assistantId
                 ? { ...m, content: response.answer, sources: response.sources }
-                : m
-            )
+                : m,
+            ),
           );
         } catch (fallbackErr: any) {
-          toast.error(fallbackErr.response?.data?.detail || fallbackErr.message || "Failed to get answer");
+          toast.error(
+            fallbackErr.response?.data?.detail ||
+              fallbackErr.message ||
+              "Failed to get answer",
+          );
           // Remove the empty placeholder on total failure
           setMessages((prev) => prev.filter((m) => m.id !== assistantId));
         }
@@ -196,7 +215,7 @@ export default function Home() {
       setTimeout(() => {
         handleSendMessageForRepo(
           response.repo_id,
-          "Give me a concise overview of this repository: its main purpose, tech stack, key features, and folder structure."
+          "Give me a concise overview of this repository: its main purpose, tech stack, key features, and folder structure.",
         );
       }, 500);
     } catch (err: any) {
@@ -209,9 +228,6 @@ export default function Home() {
       setIsIngesting(false);
     }
   }, [repoUrl, toast, handleSendMessageForRepo]);
-
-
-
 
   // Handle sending a question with cancellation support (Issue #15)
   const handleSendMessage = useCallback(
@@ -308,11 +324,24 @@ export default function Home() {
                   </div>
                   {/* Step Indicators */}
                   <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 px-1">
-                    {["Cloning", "Reading", "Chunking", "Embedding", "Indexing"].map((step, i) => {
+                    {[
+                      "Cloning",
+                      "Reading",
+                      "Chunking",
+                      "Embedding",
+                      "Indexing",
+                    ].map((step, i) => {
                       const stepProgress = (i + 1) * 20;
                       const isActive = ingestionProgress >= stepProgress - 10;
                       return (
-                        <span key={step} className={isActive ? "text-blue-500 dark:text-blue-400 font-medium" : ""}>
+                        <span
+                          key={step}
+                          className={
+                            isActive
+                              ? "text-blue-500 dark:text-blue-400 font-medium"
+                              : ""
+                          }
+                        >
                           {step}
                         </span>
                       );
@@ -376,25 +405,23 @@ export default function Home() {
               </motion.div>
             )}
 
-            {/* File Tree + Code Health sidebar + Chat */}
-            <div className="flex gap-4 w-full max-w-6xl items-start">
-              {/* Left Sidebar: File Explorer + Code Health */}
-              <div className="flex flex-col gap-4 w-72 flex-shrink-0">
+            {/* Two-Column Layout: File Tree (Left) + Chat (Right) */}
+            <div className="grid grid-cols-1 lg:grid-cols-[288px_1fr] gap-4 w-full max-w-[1400px]">
+              {/* Left Sidebar - File Tree */}
+              <div className="flex-shrink-0 flex flex-col h-[600px] overflow-hidden">
                 <FileTree
                   repoId={currentRepoId}
                   highlightedFile={highlightedFile}
                   onFileClick={(path) => {
                     setHighlightedFile(path);
-                    handleSendMessage(`Explain what the file "${path}" does and its role in the project.`);
+                    handleSendMessage(
+                      `Explain what the file "${path}" does and its role in the project.`,
+                    );
                   }}
                 />
-                {/* Code Health Dashboard below file tree */}
-                <div className="bg-gray-900/80 backdrop-blur-sm border border-white/10 rounded-2xl p-4">
-                  <CodeHealthDashboard repoId={currentRepoId} />
-                </div>
               </div>
 
-              {/* Chat */}
+              {/* Chat Interface */}
               <div className="flex-1 min-w-0">
                 <ChatInterface3D
                   messages={messages}
@@ -404,9 +431,23 @@ export default function Home() {
                 />
               </div>
             </div>
+
+            {/* Mind Map - Full Width Below Chat */}
+            <div className="w-full max-w-[1400px]">
+              <MindMapVisualization
+                repoId={currentRepoId}
+                onNodeClick={(question) => handleSendMessage(question)}
+              />
+            </div>
+
+            {/* Code Health Dashboard - Full Width Below Mind Map */}
+            <div className="w-full max-w-[1400px]">
+              <div className="bg-gray-900/80 backdrop-blur-sm border border-white/10 rounded-2xl p-6">
+                <CodeHealthDashboard repoId={currentRepoId} />
+              </div>
+            </div>
           </motion.div>
         )}
-
 
         {/* Features Section */}
         <motion.div

@@ -279,6 +279,146 @@ async def get_repo_stats(repo_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
 
 
+@router.get("/ingest/{repo_id}/structure")
+async def get_repo_structure(repo_id: str):
+    """
+    Get repository structure for mind map visualization.
+    Returns flat nodes (legacy) + full nested tree for the interactive mind map.
+    """
+    try:
+        if not validate_repo_id(repo_id):
+            raise HTTPException(status_code=400, detail="Invalid repository ID format")
+
+        status = get_status(repo_id)
+        if status["status"] != "completed":
+            raise HTTPException(status_code=400, detail="Repository not yet ingested")
+
+        from app.rag import get_embeddings, get_vectorstore
+        embeddings = get_embeddings()
+        vectorstore = get_vectorstore(repo_id, embeddings)
+
+        collection = vectorstore._collection
+        result = collection.get(include=["metadatas"])
+        metadatas = result.get("metadatas") or []
+
+        lang_map = {
+            "py": "Python", "js": "JavaScript", "ts": "TypeScript",
+            "tsx": "React/TSX", "jsx": "React/JSX", "go": "Go", "rs": "Rust",
+            "java": "Java", "cpp": "C++", "c": "C", "rb": "Ruby",
+            "php": "PHP", "swift": "Swift", "kt": "Kotlin", "cs": "C#",
+            "html": "HTML", "css": "CSS", "scss": "SCSS", "md": "Markdown",
+            "json": "JSON", "yaml": "YAML", "yml": "YAML", "toml": "TOML",
+            "sh": "Shell", "sql": "SQL",
+        }
+        color_palette = [
+            "#818cf8", "#60a5fa", "#34d399", "#c084fc",
+            "#fb923c", "#4ade80", "#f87171", "#38bdf8",
+            "#facc15", "#a78bfa", "#2dd4bf", "#f472b6",
+        ]
+
+        # Collect unique paths
+        seen_paths: set = set()
+        all_paths: list[str] = []
+        for meta in metadatas:
+            path = (meta or {}).get("source", "")
+            if path and path not in seen_paths:
+                seen_paths.add(path)
+                all_paths.append(path.replace("\\", "/"))
+
+        # Legacy flat nodes
+        dir_structure: dict[str, dict] = {}
+        for path in all_paths:
+            parts = path.split("/")
+            if len(parts) > 1:
+                top_dir = parts[0]
+                if top_dir not in dir_structure:
+                    dir_structure[top_dir] = {"name": top_dir, "file_count": 0, "subdirs": set(), "languages": set()}
+                dir_structure[top_dir]["file_count"] += 1
+                if len(parts) > 2:
+                    dir_structure[top_dir]["subdirs"].add(parts[1])
+                if "." in parts[-1]:
+                    ext = parts[-1].rsplit(".", 1)[-1].lower()
+                    if ext in lang_map:
+                        dir_structure[top_dir]["languages"].add(lang_map[ext])
+
+        nodes = []
+        for dir_name, data in sorted(dir_structure.items(), key=lambda x: -x[1]["file_count"])[:8]:
+            nodes.append({
+                "id": dir_name, "label": dir_name,
+                "file_count": data["file_count"],
+                "subdirs": list(data["subdirs"])[:3],
+                "languages": list(data["languages"]),
+            })
+
+        # Full recursive tree
+        raw_tree: dict = {}
+
+        def insert_path(tree: dict, parts: list):
+            if not parts:
+                return
+            head = parts[0]
+            rest = parts[1:]
+            if head not in tree:
+                tree[head] = {"__files__": [], "__dirs__": {}}
+            if len(rest) == 1:
+                tree[head]["__files__"].append(rest[0])
+            elif rest:
+                insert_path(tree[head]["__dirs__"], rest)
+
+        for path in all_paths:
+            insert_path(raw_tree, path.split("/"))
+
+        def tree_to_nodes(tree: dict, depth: int = 0, color_idx: int = 0, path_prefix: str = "") -> list:
+            result = []
+            for i, name in enumerate(sorted(tree.keys())):
+                subtree = tree[name]
+                c_idx = (color_idx + i) % len(color_palette)
+                files = subtree.get("__files__", [])
+                subdirs = subtree.get("__dirs__", {})
+                full_path = f"{path_prefix}/{name}" if path_prefix else name
+                langs: set = set()
+                for f in files:
+                    if "." in f:
+                        ext = f.rsplit(".", 1)[-1].lower()
+                        if ext in lang_map:
+                            langs.add(lang_map[ext])
+                children = tree_to_nodes(subdirs, depth + 1, c_idx, full_path)
+                for fname in sorted(files)[:30]:
+                    ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+                    children.append({
+                        "id": f"{full_path}/{fname}", "label": fname,
+                        "type": "file", "ext": ext,
+                        "language": lang_map.get(ext, ""),
+                        "color": color_palette[c_idx],
+                        "children": [], "depth": depth + 1,
+                    })
+                result.append({
+                    "id": full_path, "label": name, "type": "dir",
+                    "file_count": len(files),
+                    "languages": sorted(list(langs)),
+                    "color": color_palette[c_idx],
+                    "children": children,
+                    "depth": depth,
+                })
+            return result
+
+        tree_nodes = tree_to_nodes(raw_tree)
+
+        return {
+            "repo_id": repo_id,
+            "root": {"name": "Repository", "type": "repository"},
+            "nodes": nodes,
+            "total_files": len(all_paths),
+            "tree": tree_nodes,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get structure for {repo_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get structure: {str(e)}")
+
+
 @router.post("/query", response_model=QueryResponse)
 async def query_repo(request: QueryRequest):
     """

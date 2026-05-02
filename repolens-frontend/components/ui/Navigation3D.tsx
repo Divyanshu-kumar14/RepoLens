@@ -68,7 +68,7 @@ export default function Navigation3D({
             {/* Actions */}
             <div className="flex items-center gap-3">
               <motion.a
-                href="https://github.com"
+                href="https://github.com/divyanshu-kumar14/RepoLens"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"

@@ -190,8 +190,8 @@ export default function FileTree({ repoId, highlightedFile, onFileClick }: FileT
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.4 }}
-      className="w-72 flex-shrink-0 bg-gray-900/80 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden flex flex-col"
-      style={{ maxHeight: "600px" }}
+      className="w-72 flex-shrink-0 bg-gray-900/80 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden flex flex-col h-full"
+
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
