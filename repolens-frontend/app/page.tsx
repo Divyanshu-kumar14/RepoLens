@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import Navigation3D from "@/components/ui/Navigation3D";
 import Hero3D from "@/components/Hero3D";
@@ -36,8 +36,20 @@ export default function Home() {
   const { isDarkMode, toggleTheme, mounted } = useTheme();
   const toast = useToast();
 
+  // AbortController refs for cleanup
+  const queryAbortControllerRef = useRef<AbortController | null>(null);
+  const ingestAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      queryAbortControllerRef.current?.abort();
+      ingestAbortControllerRef.current?.abort();
+    };
+  }, []);
+
   // Handle repository ingestion
-  const handleIngestRepo = async () => {
+  const handleIngestRepo = useCallback(async () => {
     if (!repoUrl.trim()) {
       toast.error("Please enter a repository URL");
       return;
@@ -46,10 +58,10 @@ export default function Home() {
     setIsIngesting(true);
     try {
       const response = await apiService.ingestRepository(repoUrl);
-      
+
       // Wait for the background ingestion task to complete
       await apiService.pollIngestionStatus(response.repo_id);
-      
+
       setCurrentRepoId(response.repo_id);
       setMessages([]);
       toast.success("Repository ingested successfully!");
@@ -62,54 +74,57 @@ export default function Home() {
     } finally {
       setIsIngesting(false);
     }
-  };
+  }, [repoUrl, toast]);
 
   // Handle sending a question
-  const handleSendMessage = async (question: string) => {
-    if (!currentRepoId) {
-      toast.error("Please ingest a repository first");
-      return;
-    }
+  const handleSendMessage = useCallback(
+    async (question: string) => {
+      if (!currentRepoId) {
+        toast.error("Please ingest a repository first");
+        return;
+      }
 
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      type: "user",
-      content: question,
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    setIsQuerying(true);
-
-    try {
-      const response = await apiService.queryRepository(
-        currentRepoId,
-        question,
-      );
-
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        type: "assistant",
-        content: response.answer,
-        sources: response.sources,
+      const userMessage: Message = {
+        id: `user-${Date.now()}`,
+        type: "user",
+        content: question,
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.detail || err.message || "Failed to get answer",
-      );
+      setMessages((prev) => [...prev, userMessage]);
+      setIsQuerying(true);
 
-      const errorMessage: Message = {
-        id: `error-${Date.now()}`,
-        type: "assistant",
-        content: `Sorry, I encountered an error: ${err.response?.data?.detail || err.message || "Unknown error"}`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsQuerying(false);
-    }
-  };
+      try {
+        const response = await apiService.queryRepository(
+          currentRepoId,
+          question,
+        );
+
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          type: "assistant",
+          content: response.answer,
+          sources: response.sources,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (err: any) {
+        toast.error(
+          err.response?.data?.detail || err.message || "Failed to get answer",
+        );
+
+        const errorMessage: Message = {
+          id: `error-${Date.now()}`,
+          type: "assistant",
+          content: `Sorry, I encountered an error: ${err.response?.data?.detail || err.message || "Unknown error"}`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      } finally {
+        setIsQuerying(false);
+      }
+    },
+    [currentRepoId, toast],
+  );
 
   // Prevent flash of unstyled content
   if (!mounted) {
@@ -256,7 +271,7 @@ export default function Home() {
               },
             ].map((feature, index) => (
               <motion.div
-                key={index}
+                key={feature.title}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}

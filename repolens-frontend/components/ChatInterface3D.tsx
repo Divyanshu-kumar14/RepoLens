@@ -16,6 +16,7 @@ import PersonIcon from "@mui/icons-material/Person";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import CodeIcon from "@mui/icons-material/Code";
 import { Message } from "@/types/api";
+import MarkdownRenderer from "./ui/MarkdownRenderer";
 
 interface ChatInterface3DProps {
   messages: Message[];
@@ -32,13 +33,36 @@ export default function ChatInterface3D({
 }: ChatInterface3DProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const prevMessagesLengthRef = useRef(messages.length);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // Only auto-scroll when new messages are added (assistant responses)
+    // Don't scroll when user is just typing or submitting
+    const messagesIncreased = messages.length > prevMessagesLengthRef.current;
+    const lastMessage = messages[messages.length - 1];
+
+    // Auto-scroll only when:
+    // 1. A new assistant message arrives (not just user message)
+    // 2. Or when the user is near the bottom of the chat (within 100px)
+    if (messagesIncreased && lastMessage?.type === "assistant") {
+      scrollToBottom();
+    } else if (messagesIncreased && messagesContainerRef.current) {
+      const container = messagesContainerRef.current;
+      const isNearBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight <
+        100;
+
+      if (isNearBottom) {
+        scrollToBottom();
+      }
+    }
+
+    prevMessagesLengthRef.current = messages.length;
   }, [messages]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -66,7 +90,10 @@ export default function ChatInterface3D({
         </div>
 
         {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto space-y-4 mb-4 px-2">
+        <div
+          ref={messagesContainerRef}
+          className="flex-1 overflow-y-auto space-y-4 mb-4 px-2 relative"
+        >
           <AnimatePresence mode="popLayout">
             {messages.length === 0 ? (
               <motion.div
@@ -181,9 +208,13 @@ function ChatMessage({ message }: { message: Message }) {
           whileHover={{ scale: 1.02 }}
           transition={{ duration: 0.2 }}
         >
-          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-            {message.content}
-          </p>
+          {isUser ? (
+            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+              {message.content}
+            </p>
+          ) : (
+            <MarkdownRenderer content={message.content} />
+          )}
         </motion.div>
 
         {/* Sources */}
@@ -196,7 +227,7 @@ function ChatMessage({ message }: { message: Message }) {
             <p className="text-xs text-gray-500 font-medium">Sources:</p>
             {message.sources.map((source, index) => (
               <motion.div
-                key={index}
+                key={`${source.file_path}-${index}`}
                 className="glass rounded-lg p-3 text-xs"
                 whileHover={{ x: 5 }}
                 transition={{ duration: 0.2 }}

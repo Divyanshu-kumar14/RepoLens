@@ -6,7 +6,6 @@
 "use client";
 
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useState, useEffect } from "react";
 import CodeIcon from "@mui/icons-material/Code";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
@@ -21,19 +20,10 @@ export default function Navigation3D({
   onThemeToggle,
   isDarkMode,
 }: Navigation3DProps) {
-  const [isScrolled, setIsScrolled] = useState(false);
   const { scrollY } = useScroll();
   const navOpacity = useTransform(scrollY, [0, 100], [0.95, 1]);
   const navBlur = useTransform(scrollY, [0, 100], [10, 20]);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
-    };
-
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  const isScrolled = useTransform(scrollY, [0, 20], [false, true]);
 
   return (
     <motion.nav
@@ -47,9 +37,7 @@ export default function Navigation3D({
     >
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <motion.div
-          className={`glass rounded-2xl px-6 py-4 transition-all duration-300 ${
-            isScrolled ? "elevation-4" : "elevation-2"
-          }`}
+          className="glass rounded-2xl px-6 py-4 transition-all duration-300 elevation-2"
           style={{
             backdropFilter: `blur(${navBlur}px)`,
           }}

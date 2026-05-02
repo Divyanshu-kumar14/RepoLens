@@ -122,14 +122,14 @@ export default function Hero3D() {
             transition={{ duration: 0.6, delay: 0.6 }}
             className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-16 max-w-4xl mx-auto"
           >
-            {stats.map((stat, index) => (
+            {stats.map((stat) => (
               <motion.div
-                key={index}
+                key={stat.label}
                 className="glass rounded-2xl p-6 elevation-2 flex flex-col items-center justify-center text-center"
                 whileHover={{ y: -5, transition: { duration: 0.2 } }}
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.4, delay: 0.7 + index * 0.1 }}
+                transition={{ duration: 0.4, delay: 0.7 + stats.indexOf(stat) * 0.1 }}
               >
                 <div className="text-blue-600 dark:text-blue-400 mb-3 flex items-center justify-center">
                   {stat.icon}

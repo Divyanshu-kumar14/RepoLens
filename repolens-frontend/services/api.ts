@@ -86,15 +86,39 @@ class ApiService {
    * @param repoId - Repository identifier
    * @param onProgress - Callback for progress updates
    * @param pollInterval - Polling interval in milliseconds (default: 2000)
+   * @param maxAttempts - Maximum polling attempts (default: 60 = 2 minutes)
+   * @param signal - AbortSignal to cancel polling
    * @returns Final ingestion status
    */
   async pollIngestionStatus(
     repoId: string,
     onProgress?: (status: IngestionStatus) => void,
     pollInterval: number = 2000,
+    maxAttempts: number = 60,
+    signal?: AbortSignal,
   ): Promise<IngestionStatus> {
+    let attempts = 0;
+
     return new Promise((resolve, reject) => {
       const poll = async () => {
+        // Check if polling was cancelled
+        if (signal?.aborted) {
+          reject(new Error("Polling cancelled"));
+          return;
+        }
+
+        // Check if max attempts exceeded
+        if (attempts >= maxAttempts) {
+          reject(
+            new Error(
+              "Ingestion timeout - exceeded maximum attempts. Please try again.",
+            ),
+          );
+          return;
+        }
+
+        attempts++;
+
         try {
           const status = await this.getIngestionStatus(repoId);
 
