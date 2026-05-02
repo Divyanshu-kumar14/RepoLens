@@ -7,9 +7,11 @@ import re
 import shutil
 import uuid
 import logging
+import subprocess
 import threading
-from typing import Dict, Any
-from langchain_community.document_loaders import GitLoader
+from pathlib import Path
+from typing import Dict, Any, List
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.config import settings
 from app.rag import get_embeddings, create_vectorstore
@@ -162,38 +164,76 @@ def ingest_repository(repo_url: str, repo_id: str) -> None:
 
         update_status(repo_id, "processing", 15, stage="Cloning repository...")
 
-        documents = None
+        # Strategy: try default branch first (no --branch flag), then main/master.
+        # --depth=1 = shallow clone (latest snapshot only, no history)
+        # --filter=blob:none = blobless clone (fetch file contents on-demand)
+        # Together this is the fastest possible clone for any repo size.
+        cloned = False
+
+        # Attempt 1: default branch (works for any repo regardless of branch name)
+        attempts = [
+            ["git", "clone", "--depth=1", "--filter=blob:none",
+             "--single-branch", repo_url, repo_path],
+        ]
+        # Attempt 2+: explicit branches as fallback
         for branch in ["main", "master"]:
+            attempts.append(
+                ["git", "clone", "--depth=1", "--filter=blob:none",
+                 "--branch", branch, "--single-branch", repo_url, repo_path]
+            )
+
+        for cmd in attempts:
+            if os.path.exists(repo_path):
+                shutil.rmtree(repo_path)
             try:
-                # Clean directory before each branch attempt
-                if os.path.exists(repo_path):
-                    shutil.rmtree(repo_path)
-                os.makedirs(repo_path, exist_ok=True)
-
-                loader = GitLoader(
-                    clone_url=repo_url,
-                    repo_path=repo_path,
-                    branch=branch,
-                    # BUG FIX: was `lambda file_path: True` which loaded
-                    # binaries and lock files, breaking the embedding step.
-                    file_filter=_is_allowed_file,
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True, text=True, timeout=180
                 )
+                if result.returncode == 0:
+                    branch_label = cmd[cmd.index("--branch") + 1] if "--branch" in cmd else "default"
+                    logger.info(f"Shallow-cloned branch '{branch_label}' successfully")
+                    cloned = True
+                    break
+                else:
+                    logger.warning(f"Clone attempt failed: {result.stderr[:300]}")
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Clone timed out (180s) for cmd: {' '.join(cmd[-3:])}")
+            except Exception as clone_err:
+                logger.warning(f"Clone error: {clone_err}")
 
-                update_status(repo_id, "processing", 35, stage="Reading code files...")
-                documents = loader.load()
-                logger.info(
-                    f"Loaded {len(documents)} documents from branch '{branch}'"
-                )
-                break
-            except Exception as branch_err:
-                logger.warning(f"Branch '{branch}' failed: {branch_err}")
-                continue
-
-        if documents is None:
+        if not cloned:
             raise ValueError(
                 "Could not clone repository. "
-                "Neither 'main' nor 'master' branch found."
+                "Check the URL is a valid public GitHub repo and try again."
             )
+
+
+        # Walk the cloned directory and load allowed files manually
+        update_status(repo_id, "processing", 35, stage="Reading code files...")
+        documents: List[Document] = []
+        repo_path_obj = Path(repo_path)
+        for file_path in repo_path_obj.rglob("*"):
+            # Skip .git directory, only process files
+            if ".git" in file_path.parts:
+                continue
+            if not file_path.is_file():
+                continue
+            if not _is_allowed_file(str(file_path)):
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                if not content.strip():
+                    continue
+                rel_path = str(file_path.relative_to(repo_path_obj))
+                documents.append(Document(
+                    page_content=content,
+                    metadata={"source": rel_path}
+                ))
+            except Exception as read_err:
+                logger.debug(f"Skipping {file_path}: {read_err}")
+
+        logger.info(f"Loaded {len(documents)} documents from repository")
 
         if not documents:
             raise ValueError(

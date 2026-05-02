@@ -71,7 +71,9 @@ if __name__ == "__main__":
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
-        reload_excludes=["data/*"] if settings.debug else None,
+        # Exclude data/ — cloned repos and ChromaDB files would otherwise
+        # trigger constant server restarts during ingestion.
+        reload_excludes=["data", "data/*", "data/**/*"] if settings.debug else None,
     )
 
 # Made with Bob

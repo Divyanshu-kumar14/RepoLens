@@ -97,9 +97,10 @@ class ApiService {
     let attempts = 0;
     let networkErrors = 0;        // consecutive network error counter
     const maxNetworkErrors = 5;   // tolerate up to 5 transient errors before giving up
-    let pollInterval = 1000; // Start with 1 second
-    const maxInterval = 5000; // Max 5 seconds
-    const maxAttempts = 120; // 2-10 minutes depending on backoff
+    let pollInterval = 1000;      // start at 1s
+    const maxInterval = 3000;     // cap at 3s (don't spam but stay responsive)
+    const maxAttempts = 240;      // 4 min at 1s, longer with backoff — outlasts 180s clone
+
 
     return new Promise((resolve, reject) => {
       const poll = async () => {
