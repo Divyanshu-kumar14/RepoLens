@@ -2,12 +2,17 @@
 RepoLens Backend - Main Entry Point
 FastAPI application for chat with your codebase
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from app.api.routes import router
 import logging
+import os
 from app.config import settings
 
 # Configure logging to show INFO level messages
@@ -33,6 +38,9 @@ class SelectiveGZipMiddleware(GZipMiddleware):
         await super().__call__(scope, receive, send)
 
 
+# Bug Fix C2: Rate limiter to protect expensive endpoints (ingest, query)
+limiter = Limiter(key_func=get_remote_address)
+
 # Initialize FastAPI app
 app = FastAPI(
     title="RepoLens MVP",
@@ -40,16 +48,23 @@ app = FastAPI(
     version="0.1.0"
 )
 
+# Attach rate limiter state and error handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Add selective gzip compression — skips SSE (text/event-stream) responses
 app.add_middleware(SelectiveGZipMiddleware, minimum_size=1000)
 
 # Configure CORS for frontend integration
+# Issue #1 Fix: Restrict CORS to specific origins
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Hackathon mode - allow all origins
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Include API routes

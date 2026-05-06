@@ -9,41 +9,40 @@ import { useState, useEffect } from "react";
 
 export type Theme = "light" | "dark";
 
+const applyTheme = (newTheme: Theme) => {
+  const root = document.documentElement;
+
+  if (newTheme === "dark") {
+    root.setAttribute("data-theme", "dark");
+    root.classList.add("dark");
+  } else {
+    root.setAttribute("data-theme", "light");
+    root.classList.remove("dark");
+  }
+};
+
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>("light");
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    Promise.resolve().then(() => {
+      // Check localStorage first
+      const savedTheme = localStorage.getItem("theme") as Theme | null;
 
-    // Check localStorage first
-    const savedTheme = localStorage.getItem("theme") as Theme | null;
-
-    if (savedTheme) {
-      setTheme(savedTheme);
-      applyTheme(savedTheme);
-    } else {
-      // Check system preference
-      const prefersDark = window.matchMedia(
-        "(prefers-color-scheme: dark)",
-      ).matches;
-      const systemTheme = prefersDark ? "dark" : "light";
-      setTheme(systemTheme);
-      applyTheme(systemTheme);
-    }
+      if (savedTheme) {
+        setTheme(savedTheme);
+        applyTheme(savedTheme);
+      } else {
+        // Check system preference
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+        const systemTheme = prefersDark ? "dark" : "light";
+        setTheme(systemTheme);
+        applyTheme(systemTheme);
+      }
+    });
   }, []);
-
-  const applyTheme = (newTheme: Theme) => {
-    const root = document.documentElement;
-
-    if (newTheme === "dark") {
-      root.setAttribute("data-theme", "dark");
-      root.classList.add("dark");
-    } else {
-      root.setAttribute("data-theme", "light");
-      root.classList.remove("dark");
-    }
-  };
 
   const toggleTheme = () => {
     const newTheme = theme === "light" ? "dark" : "light";
@@ -63,7 +62,7 @@ export function useTheme() {
     toggleTheme,
     setTheme: setThemeMode,
     isDarkMode: theme === "dark",
-    mounted,
+    mounted: true,
   };
 }
 

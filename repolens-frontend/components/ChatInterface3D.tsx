@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useRef, useEffect, useCallback, memo, FormEvent } from "react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Card3D from "./ui/Card3D";
 import Button3D from "./ui/Button3D";
@@ -251,7 +251,7 @@ const ChatMessage = memo(
 
         {/* Message Content */}
         <div
-          className={`max-w-[75%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-2`}
+          className={`max-w-[88%] sm:max-w-[78%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-2`}
         >
           <motion.div
             className={`glass rounded-2xl p-4 ${
@@ -291,7 +291,7 @@ const ChatMessage = memo(
               animate={{ opacity: 1, height: "auto" }}
               className="space-y-2 w-full"
             >
-              <p className="text-xs text-gray-500 font-medium">Sources:</p>
+              <p className="text-xs text-gray-500 font-medium">Sources</p>
               {message.sources.map((source, index) => (
                 <motion.div
                   key={`${source.file_path}-${index}`}
@@ -304,10 +304,15 @@ const ChatMessage = memo(
                     <div className="flex-1 min-w-0">
                       <p className="font-mono text-blue-600 dark:text-blue-400 truncate">
                         {source.file_path}
+                        {source.line_start
+                          ? `:${source.line_start}${source.line_end && source.line_end !== source.line_start ? `-${source.line_end}` : ""}`
+                          : ""}
                       </p>
-                      <p className="text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                        {source.content}
-                      </p>
+                      {source.content && (
+                        <p className="text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                          {source.content}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </motion.div>
@@ -324,11 +329,15 @@ const ChatMessage = memo(
     );
   },
   (prevProps, nextProps) => {
-    // Custom comparison: only re-render if message content or streaming state changed
+    // Custom comparison: only re-render if message content, sources (deep check), or streaming state changed
+    const sourcesEqual = 
+      prevProps.message.sources === nextProps.message.sources ||
+      JSON.stringify(prevProps.message.sources) === JSON.stringify(nextProps.message.sources);
+
     return (
       prevProps.message.id === nextProps.message.id &&
       prevProps.message.content === nextProps.message.content &&
-      prevProps.message.sources === nextProps.message.sources &&
+      sourcesEqual &&
       prevProps.isStreaming === nextProps.isStreaming
     );
   },

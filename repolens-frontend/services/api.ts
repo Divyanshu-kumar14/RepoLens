@@ -11,10 +11,17 @@ import {
   QueryRequest,
   QueryResponse,
   HealthResponse,
+  RepoSummaryResponse,
+  RepositoryStructureResponse,
 } from "@/types/api";
 
 // Backend API base URL - defaults to localhost:8000
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Issue #23 Fix: Use HTTPS in production
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "https://api.repolens.com"
+    : "http://localhost:8000");
 
 class ApiService {
   private client: AxiosInstance;
@@ -25,8 +32,8 @@ class ApiService {
       headers: {
         "Content-Type": "application/json",
       },
-      // No timeout - allow AI operations to complete naturally
-      timeout: 0,
+      // Issue #19 Fix: Set reasonable timeout for AI operations
+      timeout: 300000, // 5 minutes for AI operations
     });
   }
 
@@ -73,8 +80,9 @@ class ApiService {
   async queryRepository(
     repoId: string,
     question: string,
+    mode: QueryRequest["mode"] = "explain",
   ): Promise<QueryResponse> {
-    const request: QueryRequest = { repo_id: repoId, question };
+    const request: QueryRequest = { repo_id: repoId, question, mode };
     const response = await this.client.post<QueryResponse>(
       "/api/query",
       request,
@@ -142,7 +150,7 @@ class ApiService {
             }
             setTimeout(poll, pollInterval);
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
           networkErrors++;
           // Tolerate transient network errors (server restart, 503, etc.)
           if (networkErrors <= maxNetworkErrors) {
@@ -166,8 +174,23 @@ class ApiService {
    * @param repoId - Repository identifier
    * @returns Repository structure with directory hierarchy
    */
-  async getRepositoryStructure(repoId: string): Promise<any> {
-    const response = await this.client.get(`/api/ingest/${repoId}/structure`);
+  async getRepositoryStructure(
+    repoId: string,
+  ): Promise<RepositoryStructureResponse> {
+    const response = await this.client.get<RepositoryStructureResponse>(
+      `/api/ingest/${repoId}/structure`,
+    );
+    return response.data;
+  }
+
+  /**
+   * Get the ingestion-time repository summary and suggested questions
+   * @param repoId - Repository identifier
+   */
+  async getRepositorySummary(repoId: string): Promise<RepoSummaryResponse> {
+    const response = await this.client.get<RepoSummaryResponse>(
+      `/api/ingest/${repoId}/summary`,
+    );
     return response.data;
   }
 
@@ -179,15 +202,21 @@ class ApiService {
     repoId: string,
     question: string,
     signal?: AbortSignal,
+    mode: QueryRequest["mode"] = "explain",
   ): AsyncGenerator<{
     token?: string;
-    sources?: { file_path: string }[];
+    sources?: {
+      file_path: string;
+      content?: string;
+      line_start?: number;
+      line_end?: number;
+    }[];
     error?: string;
   }> {
     const response = await fetch(`${API_BASE_URL}/api/query/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repo_id: repoId, question }),
+      body: JSON.stringify({ repo_id: repoId, question, mode }),
       signal,
     });
 
@@ -198,7 +227,12 @@ class ApiService {
       throw new Error(err.detail || `HTTP ${response.status}`);
     }
 
-    const reader = response.body!.getReader();
+    // Bug Fix H2: Explicit null check instead of non-null assertion
+    // response.body can be null in some browsers or error conditions
+    if (!response.body) {
+      throw new Error("Response body is null — streaming not supported in this environment");
+    }
+    const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
 

@@ -49,17 +49,62 @@ const CodeHealthDashboard = dynamic(
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/useToast";
 import { apiService } from "@/services/api";
-import { Message } from "@/types/api";
+import { Message, QueryRequest } from "@/types/api";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import CodeIcon from "@mui/icons-material/Code";
-import SpeedIcon from "@mui/icons-material/Speed";
-import SecurityIcon from "@mui/icons-material/Security";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import ChatIcon from "@mui/icons-material/Chat";
 import InsightsIcon from "@mui/icons-material/Insights";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import BugReportIcon from "@mui/icons-material/BugReport";
+import SummarizeIcon from "@mui/icons-material/Summarize";
+import SchoolIcon from "@mui/icons-material/School";
+
+const DEFAULT_SUGGESTED_QUESTIONS = [
+  "What does this project do?",
+  "How does authentication work?",
+  "List all API endpoints",
+  "What are the main dependencies?",
+  "Explain the folder structure",
+  "Are there any potential security issues?",
+];
+
+const QUERY_MODE_OPTIONS = [
+  { value: "explain", label: "Explain", icon: <AutoAwesomeIcon sx={{ fontSize: 16 }} /> },
+  { value: "debug", label: "Debug", icon: <BugReportIcon sx={{ fontSize: 16 }} /> },
+  { value: "summarize", label: "Summary", icon: <SummarizeIcon sx={{ fontSize: 16 }} /> },
+  { value: "onboard", label: "Onboard", icon: <SchoolIcon sx={{ fontSize: 16 }} /> },
+] as const;
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null) {
+    const maybeResponse = error as {
+      response?: { data?: { detail?: unknown } };
+      message?: unknown;
+    };
+    if (typeof maybeResponse.response?.data?.detail === "string") {
+      return maybeResponse.response.data.detail;
+    }
+    if (typeof maybeResponse.message === "string") {
+      return maybeResponse.message;
+    }
+  }
+  return fallback;
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof DOMException && error.name === "AbortError"
+  ) || (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    ((error as { name?: unknown }).name === "AbortError" ||
+      (error as { name?: unknown }).name === "CanceledError")
+  );
+}
 
 export default function Home() {
   const [currentRepoId, setCurrentRepoId] = useState<string | null>(null);
@@ -70,15 +115,10 @@ export default function Home() {
   const [ingestionProgress, setIngestionProgress] = useState(0);
   const [ingestionStage, setIngestionStage] = useState("");
   const [highlightedFile, setHighlightedFile] = useState<string | undefined>();
-
-  const SUGGESTED_QUESTIONS = [
-    "What does this project do?",
-    "How does authentication work?",
-    "List all API endpoints",
-    "What are the main dependencies?",
-    "Explain the folder structure",
-    "Are there any potential security issues?",
-  ];
+  const [suggestedQuestions, setSuggestedQuestions] = useState(
+    DEFAULT_SUGGESTED_QUESTIONS,
+  );
+  const [queryMode, setQueryMode] = useState<QueryRequest["mode"]>("explain");
 
   const { isDarkMode, toggleTheme, mounted } = useTheme();
   const toast = useToast();
@@ -98,7 +138,11 @@ export default function Home() {
   // ── Helper: send a message for a specific repo_id using SSE streaming ──────
   // Defined FIRST because handleIngestRepo depends on it (auto-summary).
   const handleSendMessageForRepo = useCallback(
-    async (repoId: string, question: string) => {
+    async (
+      repoId: string,
+      question: string,
+      mode: QueryRequest["mode"] = queryMode,
+    ) => {
       const userMessage: Message = {
         id: `user-${Date.now()}`,
         type: "user",
@@ -128,6 +172,7 @@ export default function Home() {
           repoId,
           question,
           abortController.signal,
+          mode,
         )) {
           if (event.error) {
             throw new Error(event.error);
@@ -151,7 +196,7 @@ export default function Home() {
 
         // Empty stream → fall back to non-streaming endpoint
         if (!accumulated) {
-          const response = await apiService.queryRepository(repoId, question);
+          const response = await apiService.queryRepository(repoId, question, mode);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
@@ -160,11 +205,11 @@ export default function Home() {
             ),
           );
         }
-      } catch (err: any) {
-        if (err.name === "AbortError" || err.name === "CanceledError") return;
+      } catch (err: unknown) {
+        if (isAbortError(err)) return;
         // Stream error → fall back to regular query
         try {
-          const response = await apiService.queryRepository(repoId, question);
+          const response = await apiService.queryRepository(repoId, question, mode);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
@@ -172,11 +217,9 @@ export default function Home() {
                 : m,
             ),
           );
-        } catch (fallbackErr: any) {
+        } catch (fallbackErr: unknown) {
           toast.error(
-            fallbackErr.response?.data?.detail ||
-              fallbackErr.message ||
-              "Failed to get answer",
+            getErrorMessage(fallbackErr, "Failed to get answer"),
           );
           // Remove the empty placeholder on total failure
           setMessages((prev) => prev.filter((m) => m.id !== assistantId));
@@ -186,7 +229,7 @@ export default function Home() {
         queryAbortControllerRef.current = null;
       }
     },
-    [toast],
+    [queryMode, toast],
   );
 
   // ── Ingest handler ──────────────────────────────────────────────────────────
@@ -200,18 +243,37 @@ export default function Home() {
     setIngestionProgress(0);
     setIngestionStage("Starting...");
     try {
+      // Bug Fix H3: Create abort controller for ingestion polling
+      // so it cancels on unmount (cleanup is in useEffect above)
+      ingestAbortControllerRef.current?.abort();
+      const controller = new AbortController();
+      ingestAbortControllerRef.current = controller;
+
       const response = await apiService.ingestRepository(repoUrl);
 
       await apiService.pollIngestionStatus(response.repo_id, (status) => {
         setIngestionProgress(status.progress ?? 0);
         setIngestionStage(status.stage ?? "Processing...");
-      });
+      }, controller.signal);
 
       setCurrentRepoId(response.repo_id);
       setMessages([]);
       setIngestionProgress(100);
       setIngestionStage("Ready!");
-      toast.success("Repository ingested successfully!");
+      toast.success(
+        response.reused
+          ? "Existing repository index reused!"
+          : "Repository ingested successfully!",
+      );
+
+      apiService
+        .getRepositorySummary(response.repo_id)
+        .then((summary) => {
+          if (summary.suggested_questions.length > 0) {
+            setSuggestedQuestions(summary.suggested_questions);
+          }
+        })
+        .catch(() => setSuggestedQuestions(DEFAULT_SUGGESTED_QUESTIONS));
 
       // Auto-summarize after ingestion (Feature 2)
       // Use the repo_id directly from response — don't rely on currentRepoId state
@@ -220,13 +282,12 @@ export default function Home() {
         handleSendMessageForRepo(
           response.repo_id,
           "Give me a concise overview of this repository: its main purpose, tech stack, key features, and folder structure.",
+          "summarize",
         );
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(
-        err.response?.data?.detail ||
-          err.message ||
-          "Failed to ingest repository",
+        getErrorMessage(err, "Failed to ingest repository"),
       );
     } finally {
       setIsIngesting(false);
@@ -397,7 +458,7 @@ export default function Home() {
                   💡 Try asking:
                 </p>
                 <div className="flex flex-wrap gap-2 justify-center">
-                  {SUGGESTED_QUESTIONS.map((q) => (
+                  {suggestedQuestions.map((q) => (
                     <motion.button
                       key={q}
                       onClick={() => handleSendMessage(q)}
@@ -412,6 +473,25 @@ export default function Home() {
                 </div>
               </motion.div>
             )}
+
+            <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 p-1">
+              {QUERY_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setQueryMode(option.value)}
+                  className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors ${
+                    queryMode === option.value
+                      ? "bg-blue-600 text-white"
+                      : "text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-white/10"
+                  }`}
+                  aria-pressed={queryMode === option.value}
+                >
+                  {option.icon}
+                  {option.label}
+                </button>
+              ))}
+            </div>
 
             {/* Two-Column Layout: File Tree (Left) + Chat (Right) */}
             <div className="grid grid-cols-1 lg:grid-cols-[288px_1fr] gap-4 w-full max-w-[1400px]">

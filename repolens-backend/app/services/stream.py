@@ -10,10 +10,13 @@ never blocked, allowing concurrent requests to be served while one is streaming.
 import asyncio
 import json
 import logging
+import queue
+import threading
 from typing import AsyncGenerator
 from app.rag import get_embeddings, get_llm, get_vectorstore, build_prompt, clean_answer
 
 logger = logging.getLogger(__name__)
+_STREAM_DONE = object()
 
 
 def _retrieve_docs(repo_id: str, question: str):
@@ -43,20 +46,46 @@ def _invoke_llm(prompt: str) -> str:
     return llm.invoke(prompt)
 
 
-def _stream_llm(prompt: str):
+def _stream_llm_to_queue(prompt: str, output_queue: queue.Queue):
     """
-    Synchronous LLM streaming — collects all chunks synchronously.
-    Returns a list of chunk strings. Runs in a thread pool.
+    Synchronous LLM streaming producer.
+    Pushes chunks into a queue so the async SSE generator can yield immediately.
     """
-    llm = get_llm()
-    chunks = []
-    for chunk in llm.stream(prompt):
-        if chunk:
-            chunks.append(chunk)
-    return chunks
+    try:
+        llm = get_llm()
+        for chunk in llm.stream(prompt):
+            if chunk:
+                output_queue.put(chunk)
+    except Exception as exc:
+        output_queue.put(exc)
+    finally:
+        output_queue.put(_STREAM_DONE)
 
 
-async def stream_query_repository(repo_id: str, question: str) -> AsyncGenerator[str, None]:
+async def _yield_streaming_chunks(prompt: str) -> AsyncGenerator[str, None]:
+    """Bridge Watsonx's synchronous stream into the async SSE response."""
+    output_queue: queue.Queue = queue.Queue()
+    producer = threading.Thread(
+        target=_stream_llm_to_queue,
+        args=(prompt, output_queue),
+        daemon=True,
+    )
+    producer.start()
+
+    while True:
+        item = await asyncio.to_thread(output_queue.get)
+        if item is _STREAM_DONE:
+            break
+        if isinstance(item, Exception):
+            raise item
+        yield item
+
+
+async def stream_query_repository(
+    repo_id: str,
+    question: str,
+    mode: str = "explain",
+) -> AsyncGenerator[str, None]:
     """
     Stream an answer token-by-token as Server-Sent Events.
 
@@ -84,15 +113,13 @@ async def stream_query_repository(repo_id: str, question: str) -> AsyncGenerator
             source_path = doc.metadata.get("source", "unknown")
             context_parts.append(f"# File: {source_path}\n{doc.page_content}")
         context = "\n\n---\n\n".join(context_parts)
-        prompt = build_prompt(context, question)
+        prompt = build_prompt(context, question, mode=mode)
 
         # Step 3: Stream tokens (sync LLM call → thread pool)
         logger.info(f"Streaming response for repo {repo_id}")
 
         try:
-            # Collect all chunks from the sync streaming call
-            chunks = await asyncio.to_thread(_stream_llm, prompt)
-            for chunk in chunks:
+            async for chunk in _yield_streaming_chunks(prompt):
                 yield f"data: {json.dumps({'token': chunk})}\n\n"
         except Exception as stream_err:
             # Fallback: invoke synchronously and fake-stream in chunks
@@ -111,7 +138,15 @@ async def stream_query_repository(repo_id: str, question: str) -> AsyncGenerator
             path = doc.metadata.get("source", "unknown")
             if path not in seen:
                 seen.add(path)
-                sources.append({"file_path": path})
+                content = doc.page_content.strip()
+                if len(content) > 900:
+                    content = f"{content[:900].rstrip()}\n..."
+                sources.append({
+                    "file_path": path,
+                    "content": content,
+                    "line_start": doc.metadata.get("line_start"),
+                    "line_end": doc.metadata.get("line_end"),
+                })
 
         yield f"data: {json.dumps({'sources': sources})}\n\n"
         yield "data: [DONE]\n\n"

@@ -1,34 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, useMotionValue } from "framer-motion";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import CenterFocusStrongIcon from "@mui/icons-material/CenterFocusStrong";
 import { apiService } from "@/services/api";
+import {
+  RepositoryStructureResponse,
+  RepositoryTreeNode,
+} from "@/types/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-interface TreeNode {
-  id: string;
-  label: string;
-  type: "dir" | "file";
-  file_count?: number;
-  languages?: string[];
-  color: string;
-  ext?: string;
-  language?: string;
-  children: TreeNode[];
-  depth: number;
-}
-
-interface ApiData {
-  repo_id: string;
-  root: { name: string; type: string };
-  total_files: number;
-  tree: TreeNode[];
-}
 
 interface LayoutNode {
   id: string;
@@ -68,7 +52,7 @@ interface LayoutResult {
 }
 
 function layoutTree(
-  tree: TreeNode[],
+  tree: RepositoryTreeNode[],
   rootName: string,
   collapsed: Set<string>,
 ): LayoutResult {
@@ -90,7 +74,7 @@ function layoutTree(
   });
 
   // Recursive subtree height calculation
-  function subtreeHeight(node: TreeNode): number {
+  function subtreeHeight(node: RepositoryTreeNode): number {
     if (collapsed.has(node.id) || node.children.length === 0) {
       return NODE_H + V_GAP;
     }
@@ -104,7 +88,7 @@ function layoutTree(
   function place(
     nodes_: LayoutNode[],
     edges_: { from: string; to: string; color: string }[],
-    items: TreeNode[],
+    items: RepositoryTreeNode[],
     parentId: string,
     startX: number,
     startY: number,
@@ -165,10 +149,7 @@ function layoutTree(
 
   // Calculate bounding box
   const xs = nodes.map((n) => n.x);
-  const ys = nodes.map((n) => n.y);
   const maxX = Math.max(...xs) + NODE_W + 40;
-  const maxY = Math.max(...ys) + NODE_H + 40;
-
   return { nodes, edges, totalH, totalW: maxX };
 }
 
@@ -202,7 +183,7 @@ export default function MindMapVisualization({
   repoId,
   onNodeClick,
 }: MindMapVisualizationProps) {
-  const [apiData, setApiData] = useState<ApiData | null>(null);
+  const [apiData, setApiData] = useState<RepositoryStructureResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -211,10 +192,10 @@ export default function MindMapVisualization({
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
 
-  // Pan + zoom
-  const [tx, setTx] = useState(80);
-  const [ty, setTy] = useState(0);
-  const [scale, setScale] = useState(0.85);
+  const tx = useMotionValue(80);
+  const ty = useMotionValue(0);
+  const scale = useMotionValue(0.85);
+  const [isPanning, setIsPanning] = useState(false);
   const panning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, tx: 0, ty: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -222,18 +203,29 @@ export default function MindMapVisualization({
   // Fetch
   useEffect(() => {
     if (!repoId) return;
-    setLoading(true);
-    setError(null);
-    apiService
-      .getRepositoryStructure(repoId)
-      .then((res: ApiData) => {
-        setApiData(res);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError("Failed to load repository structure");
-        setLoading(false);
-      });
+    let cancelled = false;
+
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+      apiService
+        .getRepositoryStructure(repoId)
+        .then((res) => {
+          if (cancelled) return;
+          setApiData(res);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setError("Failed to load repository structure");
+          setLoading(false);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [repoId]);
 
   // Layout
@@ -254,57 +246,77 @@ export default function MindMapVisualization({
     const rect = containerRef.current.getBoundingClientRect();
     const ys = nodes.map((n) => n.y + NODE_H / 2);
     const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
-    setTx(60);
-    setTy(rect.height / 2 - midY * scale);
+    tx.set(60);
+    ty.set(rect.height / 2 - midY * scale.get());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiData]);
 
-  // Wheel zoom
-  const onWheel = useCallback((e: React.WheelEvent) => {
+  // Wheel zoom — Bug Fix M6: Use native addEventListener with { passive: false }
+  // to avoid Chrome's "Unable to preventDefault inside passive event listener" warning.
+  const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.1 : 0.909;
     const rect = containerRef.current!.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
-    setScale((s) => {
-      const ns = Math.min(3, Math.max(0.2, s * factor));
-      setTx((t) => cx - ((cx - t) * ns) / s);
-      setTy((t) => cy - ((cy - t) * ns) / s);
-      return ns;
-    });
+    
+    const s = scale.get();
+    const ns = Math.min(3, Math.max(0.2, s * factor));
+    
+    const currentTx = tx.get();
+    const currentTy = ty.get();
+    
+    tx.set(cx - ((cx - currentTx) * ns) / s);
+    ty.set(cy - ((cy - currentTy) * ns) / s);
+    scale.set(ns);
   }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
 
   // Pan
   const onPanDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
     panning.current = true;
-    panStart.current = { mx: e.clientX, my: e.clientY, tx, ty };
+    setIsPanning(true);
+    panStart.current = { mx: e.clientX, my: e.clientY, tx: tx.get(), ty: ty.get() };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [tx, ty]);
+  }, []);
 
   const onPanMove = useCallback((e: React.PointerEvent) => {
     if (!panning.current) return;
-    setTx(panStart.current.tx + e.clientX - panStart.current.mx);
-    setTy(panStart.current.ty + e.clientY - panStart.current.my);
+    tx.set(panStart.current.tx + e.clientX - panStart.current.mx);
+    ty.set(panStart.current.ty + e.clientY - panStart.current.my);
   }, []);
 
-  const onPanUp = useCallback(() => { panning.current = false; }, []);
+  const onPanUp = useCallback(() => {
+    panning.current = false;
+    setIsPanning(false);
+  }, []);
 
   const resetView = useCallback(() => {
     if (!nodes.length || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const ys = nodes.map((n) => n.y + NODE_H / 2);
     const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
-    setScale(0.85);
-    setTx(60);
-    setTy(rect.height / 2 - midY * 0.85);
+    scale.set(0.85);
+    tx.set(60);
+    ty.set(rect.height / 2 - midY * 0.85);
   }, [nodes]);
 
   const toggleCollapse = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setCollapsed((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   }, []);
@@ -369,11 +381,11 @@ export default function MindMapVisualization({
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => setScale((s) => Math.min(3, s * 1.2))}
+          <button onClick={() => scale.set(Math.min(3, scale.get() * 1.2))}
             className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors" title="Zoom in">
             <ZoomInIcon sx={{ fontSize: 18 }} />
           </button>
-          <button onClick={() => setScale((s) => Math.max(0.2, s / 1.2))}
+          <button onClick={() => scale.set(Math.max(0.2, scale.get() / 1.2))}
             className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors" title="Zoom out">
             <ZoomOutIcon sx={{ fontSize: 18 }} />
           </button>
@@ -400,8 +412,7 @@ export default function MindMapVisualization({
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden relative"
-        style={{ cursor: panning.current ? "grabbing" : "grab" }}
-        onWheel={onWheel}
+        style={{ cursor: isPanning ? "grabbing" : "grab" }}
         onPointerDown={onPanDown}
         onPointerMove={onPanMove}
         onPointerUp={onPanUp}
@@ -415,7 +426,7 @@ export default function MindMapVisualization({
             </filter>
           </defs>
 
-          <g transform={`translate(${tx}, ${ty}) scale(${scale})`}>
+          <motion.g style={{ x: tx, y: ty, scale }}>
             {/* ── Edges ── */}
             {edges.map((edge, ei) => {
               const fromN = nodeMap[edge.from];
@@ -570,7 +581,7 @@ export default function MindMapVisualization({
                 </g>
               );
             })}
-          </g>
+          </motion.g>
         </svg>
 
         {/* Hint */}

@@ -2,6 +2,7 @@
 Configuration management using Pydantic Settings
 Loads environment variables from .env file
 """
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -25,6 +26,16 @@ class Settings(BaseSettings):
     
     # Hugging Face Configuration
     hf_token: Optional[str] = None
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug(cls, value):
+        """Accept deployment labels accidentally placed in DEBUG."""
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "prod", "production"}:
+                return False
+        return value
     
     # Derived paths
     @property

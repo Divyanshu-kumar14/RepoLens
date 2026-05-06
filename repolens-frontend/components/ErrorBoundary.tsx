@@ -5,7 +5,7 @@
 
 "use client";
 
-import { Component, ReactNode } from "react";
+import { Component, ErrorInfo, ReactNode } from "react";
 import Card3D from "./ui/Card3D";
 import Button3D from "./ui/Button3D";
 import ErrorIcon from "@mui/icons-material/Error";
@@ -19,7 +19,7 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
-  errorInfo?: any;
+  errorInfo?: ErrorInfo;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: any) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // Log error to console in development
     console.error("Error caught by boundary:", error, errorInfo);
 
@@ -70,7 +70,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   Oops! Something went wrong
                 </h2>
                 <p className="text-gray-600 dark:text-gray-400 mb-2">
-                  We encountered an unexpected error. Don't worry, your data is
+                  We encountered an unexpected error. Your data is
                   safe.
                 </p>
                 {this.state.error && (

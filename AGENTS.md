@@ -34,9 +34,9 @@ This project STRICTLY uses `uv` for all Python dependency management.
 
 - **No Hallucinated LLMs:** The backend MUST use `ibm-watsonx-ai` via LangChain. Do not write boilerplate for OpenAI, Anthropic, or standard HuggingFace endpoints.
 
-- **Model Restriction:** Default to `granite-3-8b-instruct`. Strictly avoid `llama-3-405b` and `mistral` models.
+- **Model Configuration:** Issue #15 Fix - Currently using `ibm/granite-4-h-small` as `granite-3-8b-instruct` is not available in this watsonx.ai environment. The WatsonxLLM client handles IAM token refresh automatically when initialized with `apikey`.
 
-- **Authentication Gotcha:** The watsonx.ai API requires trading an API key for an **IAM Access Token**. This token expires every 60 minutes. The backend code must handle this refresh logic; do not hardcode a static token.
+- **Authentication Gotcha:** The watsonx.ai API requires trading an API key for an **IAM Access Token**. This token expires every 60 minutes. The WatsonxLLM client handles this refresh logic automatically; do not hardcode a static token.
 
 ## Directory Structure & Compliance
 

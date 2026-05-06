@@ -11,7 +11,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import FolderIcon from "@mui/icons-material/Folder";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
-import CodeIcon from "@mui/icons-material/Code";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import CloseIcon from "@mui/icons-material/Close";
 
@@ -170,23 +169,49 @@ export default function FileTree({ repoId, highlightedFile, onFileClick }: FileT
 
   useEffect(() => {
     if (!repoId) return;
-    setLoading(true);
-    fetch(`${API_BASE}/api/ingest/${repoId}/files`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        setFiles(data.files ?? []);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError("Could not load file tree");
-        setLoading(false);
-      });
+    let cancelled = false;
+
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+      fetch(`${API_BASE}/api/ingest/${repoId}/files`)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then((data: { files?: string[] }) => {
+          if (cancelled) return;
+          setFiles(data.files ?? []);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setError("Could not load file tree");
+          setLoading(false);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [repoId, API_BASE]);
 
   const tree = useMemo(() => buildTree(files), [files]);
+
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="h-full w-12 rounded-2xl border border-white/10 bg-gray-900/80 text-blue-400 hover:bg-gray-800"
+        aria-label="Open file explorer"
+        title="Open file explorer"
+      >
+        <AccountTreeIcon sx={{ fontSize: 20 }} />
+      </button>
+    );
+  }
 
   return (
     <motion.div
@@ -208,8 +233,11 @@ export default function FileTree({ repoId, highlightedFile, onFileClick }: FileT
           )}
         </div>
         <button
+          type="button"
           onClick={() => setIsOpen((v) => !v)}
           className="text-gray-500 hover:text-white transition-colors"
+          aria-label="Collapse file explorer"
+          title="Collapse"
         >
           <CloseIcon sx={{ fontSize: 16 }} />
         </button>

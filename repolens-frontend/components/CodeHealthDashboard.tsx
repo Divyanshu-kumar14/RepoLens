@@ -20,6 +20,13 @@ interface RepoStats {
   total_chunks: number;
   languages: LangEntry[];
   top_directories: DirEntry[];
+  code_health?: {
+    has_readme?: boolean;
+    has_tests?: boolean;
+    dependency_files?: string[];
+    entrypoints?: string[];
+    skipped_files?: Record<string, number>;
+  };
 }
 
 interface CodeHealthDashboardProps {
@@ -46,7 +53,9 @@ export default function CodeHealthDashboard({ repoId }: CodeHealthDashboardProps
 
   useEffect(() => {
     if (!repoId) return;
-    fetch(`${API_BASE}/api/ingest/${repoId}/stats`)
+    const controller = new AbortController();
+
+    fetch(`${API_BASE}/api/ingest/${repoId}/stats`, { signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -55,7 +64,12 @@ export default function CodeHealthDashboard({ repoId }: CodeHealthDashboardProps
         setStats(data);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        setLoading(false);
+      });
+
+    return () => controller.abort();
   }, [repoId, API_BASE]);
 
   if (loading) return null;
@@ -143,6 +157,30 @@ export default function CodeHealthDashboard({ repoId }: CodeHealthDashboardProps
               >
                 /{dir.name}
                 <span className="ml-1 text-gray-500">{dir.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stats.code_health && (
+        <div className="mt-4 pt-4 border-t border-white/10">
+          <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+            <DataObjectIcon sx={{ fontSize: 12 }} /> Signals
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="text-xs bg-gray-700/50 border border-white/5 text-gray-300 px-2 py-1 rounded-lg">
+              README {stats.code_health.has_readme ? "yes" : "missing"}
+            </span>
+            <span className="text-xs bg-gray-700/50 border border-white/5 text-gray-300 px-2 py-1 rounded-lg">
+              Tests {stats.code_health.has_tests ? "yes" : "not obvious"}
+            </span>
+            {(stats.code_health.dependency_files ?? []).slice(0, 3).map((file) => (
+              <span
+                key={file}
+                className="text-xs bg-gray-700/50 border border-white/5 text-gray-300 px-2 py-1 rounded-lg font-mono"
+              >
+                {file}
               </span>
             ))}
           </div>

@@ -3,12 +3,12 @@ Pydantic models for request/response validation
 All API models in one file for simplicity
 """
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 
 
 class IngestRequest(BaseModel):
     """Request model for repository ingestion"""
-    repo_url: str = Field(..., description="GitHub repository URL")
+    repo_url: str = Field(..., max_length=500, description="GitHub repository URL")
     
     class Config:
         json_schema_extra = {
@@ -23,6 +23,7 @@ class IngestResponse(BaseModel):
     repo_id: str = Field(..., description="Unique repository identifier")
     status: str = Field(..., description="Ingestion status")
     message: Optional[str] = Field(None, description="Additional information")
+    reused: bool = Field(False, description="True when an existing ingestion was reused")
     
     class Config:
         json_schema_extra = {
@@ -41,6 +42,7 @@ class IngestionStatus(BaseModel):
     progress: Optional[int] = Field(None, description="Progress percentage (0-100)")
     stage: Optional[str] = Field(None, description="Human-readable stage description")
     error: Optional[str] = Field(None, description="Error message if failed")
+    stats: Optional[Dict[str, Any]] = Field(None, description="Ingestion counters and summary stats")
     
     class Config:
         json_schema_extra = {
@@ -56,6 +58,10 @@ class QueryRequest(BaseModel):
     """Request model for querying a repository"""
     repo_id: str = Field(..., description="Repository identifier")
     question: str = Field(..., description="Natural language question about the code")
+    mode: Literal["explain", "debug", "summarize", "onboard"] = Field(
+        "explain",
+        description="Answer style for the query",
+    )
     
     class Config:
         json_schema_extra = {
@@ -70,6 +76,8 @@ class Source(BaseModel):
     """Source document metadata"""
     file_path: str
     content: Optional[str] = None
+    line_start: Optional[int] = None
+    line_end: Optional[int] = None
     
     class Config:
         json_schema_extra = {
@@ -112,5 +120,14 @@ class HealthResponse(BaseModel):
                 "watsonx_configured": True
             }
         }
+
+
+class RepoSummaryResponse(BaseModel):
+    """Lightweight repository summary generated during ingestion"""
+    repo_id: str
+    summary: str
+    suggested_questions: List[str] = Field(default_factory=list)
+    stats: Dict[str, Any] = Field(default_factory=dict)
+    code_health: Dict[str, Any] = Field(default_factory=dict)
 
 # Made with Bob
